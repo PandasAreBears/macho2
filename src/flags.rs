@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use num_derive::FromPrimitive;
+use strum_macros::{Display, EnumString};
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
@@ -149,12 +150,6 @@ pub enum LCLoadCommand {
     LcSymtab = 0x2,
     LcSymseg = 0x3,
     LcThread = 0x4,
-    LcUnixthread = 0x5,
-    LcLoadfvmlib = 0x6,
-    LcIdfvmlib = 0x7,
-    LcIdent = 0x8,
-    LcFvmfile = 0x9,
-    LcPrepage = 0xa,
     LcDysymtab = 0xb,
     LcLoadDylib = 0xc,
     LcIdDylib = 0xd,
@@ -323,5 +318,85 @@ impl Protection {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Protection> {
         let (bytes, prot) = nom::number::complete::le_u32(bytes)?;
         Ok((bytes, Protection::from_bits_truncate(prot)))
+    }
+}
+bitflags::bitflags! {
+    #[repr(transparent)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct DylibUseFlags: u32 {
+        const WEAK_LINK = 0x01;
+        const REEXPORT = 0x02;
+        const UPWARD = 0x04;
+        const DELAYED_INIT = 0x08;
+    }
+}
+
+impl DylibUseFlags {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DylibUseFlags> {
+        let (bytes, flags) = nom::number::complete::le_u32(bytes)?;
+        Ok((bytes, DylibUseFlags::from_bits_truncate(flags)))
+    }
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, EnumString, Display)]
+pub enum Tool {
+    Clang = 1,
+    Swift = 2,
+    Ld = 3,
+    Lld = 4,
+    Metal = 1024,
+    Airlld = 1025,
+    Airnt = 1026,
+    AirntPlugin = 1027,
+    Airpack = 1028,
+    Gpuarchiver = 1031,
+    MetalFramework = 1032,
+}
+
+impl Tool {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Tool> {
+        let (bytes, tool) = nom::number::complete::le_u32(bytes)?;
+        match num::FromPrimitive::from_u32(tool) {
+            Some(tool) => Ok((bytes, tool)),
+            None => Err(nom::Err::Failure(nom::error::Error::new(
+                bytes,
+                nom::error::ErrorKind::Tag,
+            ))),
+        }
+    }
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, EnumString, Display)]
+pub enum Platform {
+    Unknown = 0,
+    Any = 0xFFFFFFFF,
+    MacOS = 1,
+    IOS = 2,
+    TvOS = 3,
+    WatchOS = 4,
+    BridgeOS = 5,
+    MacCatalyst = 6,
+    IOSSimulator = 7,
+    TvOSSimulator = 8,
+    WatchOSSimulator = 9,
+    DriverKit = 10,
+    VisionOS = 11,
+    VisionOSSimulator = 12,
+    Firmware = 13,
+    SepOS = 14,
+}
+
+impl Platform {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Platform> {
+        let (bytes, platform) = nom::number::complete::le_u32(bytes)?;
+        match num::FromPrimitive::from_u32(platform) {
+            Some(platform) => Ok((bytes, platform)),
+            None => Err(nom::Err::Failure(nom::error::Error::new(
+                bytes,
+                nom::error::ErrorKind::Tag,
+            ))),
+        }
     }
 }
