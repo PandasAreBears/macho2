@@ -1,4 +1,5 @@
 use flags::LCLoadCommand;
+use header::MachHeader;
 use load_command::{
     BuildVersionCommand, DyldInfoCommand, DylibCommand, DylinkerCommand, DysymtabCommand,
     EncryptionInfoCommand, EncryptionInfoCommand64, EntryPointCommand, FilesetEntryCommand,
@@ -271,5 +272,31 @@ impl LoadCommand {
                 Ok((bytes, LoadCommand::FilesetEntry(cmd)))
             }
         }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct MachO {
+    pub header: MachHeader,
+    pub load_commands: Vec<LoadCommand>,
+    bytes: Vec<u8>,
+}
+
+impl MachO {
+    pub fn parse(bytes: &[u8]) -> Result<Self, nom::Err<nom::error::Error<&[u8]>>> {
+        let (mut cursor, header) = MachHeader::parse(bytes)?;
+        let mut cmds = Vec::new();
+        for _ in 0..header.ncmds() {
+            let (next, cmd) = LoadCommand::parse(cursor).unwrap();
+            cmds.push(cmd);
+            cursor = next;
+        }
+
+        Ok(Self {
+            header,
+            load_commands: cmds,
+            bytes: bytes.to_vec(),
+        })
     }
 }
