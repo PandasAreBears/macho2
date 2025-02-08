@@ -421,7 +421,7 @@ pub enum FatMagic {
 
 impl FatMagic {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], FatMagic> {
-        let (bytes, magic) = nom::number::complete::le_u32(bytes)?;
+        let (bytes, magic) = nom::number::complete::be_u32(bytes)?;
         match num::FromPrimitive::from_u32(magic) {
             Some(magic) => Ok((bytes, magic)),
             None => Err(nom::Err::Failure(nom::error::Error::new(

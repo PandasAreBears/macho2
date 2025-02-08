@@ -12,7 +12,7 @@ pub struct FatHeader {
 impl FatHeader {
     pub fn parse(input: &[u8]) -> nom::IResult<&[u8], FatHeader> {
         let (input, magic) = FatMagic::parse(input)?;
-        let (input, nfat_arch) = nom::number::complete::le_u32(input)?;
+        let (input, nfat_arch) = nom::number::complete::be_u32(input)?;
 
         Ok((input, FatHeader { magic, nfat_arch }))
     }

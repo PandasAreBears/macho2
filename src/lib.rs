@@ -308,18 +308,19 @@ impl MachO {
     }
 }
 
-pub struct FatMachO {
+pub struct FatMachO<'a> {
     pub header: FatHeader,
     pub archs: Vec<FatArch>,
+    bytes: &'a [u8],
 }
 
-impl FatMachO {
+impl<'a> FatMachO<'a> {
     pub fn is_fat_magic(bytes: &[u8]) -> bool {
-        let magic = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let magic = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         magic == FatMagic::Fat as u32 || magic == FatMagic::Fat64 as u32
     }
 
-    pub fn parse(bytes: &[u8]) -> Result<Self, nom::Err<nom::error::Error<&[u8]>>> {
+    pub fn parse(bytes: &'a [u8]) -> Result<Self, nom::Err<nom::error::Error<&'a [u8]>>> {
         let (mut cursor, header) = FatHeader::parse(bytes)?;
         let mut archs = Vec::new();
         for _ in 0..header.nfat_arch {
@@ -328,6 +329,23 @@ impl FatMachO {
             cursor = next;
         }
 
-        Ok(Self { header, archs })
+        Ok(Self {
+            header,
+            archs,
+            bytes,
+        })
+    }
+
+    pub fn macho(&self, cputype: flags::CpuType) -> MachO {
+        let arch = self
+            .archs
+            .iter()
+            .find(|arch| arch.cputype() == cputype)
+            .unwrap();
+        let offset = arch.offset() as usize;
+        let size = arch.size() as usize;
+        let bytes = &self.bytes[offset..offset + size];
+        println!("{} {} {} {}", bytes[0], bytes[1], bytes[2], bytes[3]);
+        MachO::parse(bytes).unwrap()
     }
 }

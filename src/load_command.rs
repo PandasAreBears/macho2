@@ -35,7 +35,13 @@ impl LoadCommandBase {
     }
 
     fn string_upto_null_terminator(bytes: &[u8]) -> nom::IResult<&[u8], String> {
-        let (bytes, name_bytes) = nom::bytes::complete::take_until("\0")(bytes)?;
+        let (bytes, name_bytes) =
+            match nom::bytes::complete::take_until::<&str, &[u8], nom::error::Error<&[u8]>>("\0")(
+                bytes,
+            ) {
+                Ok((bytes, name_bytes)) => (bytes, name_bytes),
+                Err(_) => return Ok((&[], String::from_utf8(bytes.to_vec()).unwrap())),
+            };
         let name = String::from_utf8(name_bytes.to_vec()).unwrap();
         Ok((&bytes[1..], name))
     }
@@ -280,14 +286,13 @@ impl LoadCommand for SegmentCommand64 {
         let (cursor, maxprot) = Protection::parse(cursor)?;
         let (cursor, initprot) = Protection::parse(cursor)?;
         let (cursor, nsects) = nom::number::complete::le_u32(cursor)?;
-        let (_, flags) = SGFlags::parse(cursor)?;
+        let (mut cursor, flags) = SGFlags::parse(cursor)?;
 
         let mut sections = Vec::new();
-        let mut remaining_bytes = bytes;
         for _ in 0..nsects {
-            let (bytes, section) = Section64::parse(remaining_bytes)?;
+            let (next, section) = Section64::parse(cursor)?;
             sections.push(section);
-            remaining_bytes = bytes;
+            cursor = next;
         }
 
         Ok((
@@ -338,53 +343,35 @@ impl LoadCommand for SymsegCommand {
 }
 
 #[derive(Debug)]
-pub struct Dylib {
+pub struct DylibCommand {
+    pub cmd: LCLoadCommand,
+    pub cmdsize: u32,
     pub name: String,
     pub timestamp: u32,
     pub current_version: String,
     pub compatibility_version: String,
 }
 
-impl Dylib {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Self> {
-        let (bytes, name_offset) = nom::number::complete::le_u32(bytes)?;
-        let (_, name) =
-            LoadCommandBase::string_upto_null_terminator(&bytes[name_offset as usize..])?;
-        let (bytes, timestamp) = nom::number::complete::le_u32(bytes)?;
-        let (bytes, current_version) = nom::number::complete::le_u32(bytes)?;
-        let (bytes, compatibility_version) = nom::number::complete::le_u32(bytes)?;
-
-        Ok((
-            bytes,
-            Dylib {
-                name,
-                timestamp,
-                current_version: LoadCommandBase::version_string(current_version),
-                compatibility_version: LoadCommandBase::version_string(compatibility_version),
-            },
-        ))
-    }
-}
-
-#[derive(Debug)]
-pub struct DylibCommand {
-    pub cmd: LCLoadCommand,
-    pub cmdsize: u32,
-    pub dylib: Dylib,
-}
-
 impl LoadCommand for DylibCommand {
     fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
-        let (_, dylib) = Dylib::parse(cursor)?;
+        let (_, name_offset) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, timestamp) = nom::number::complete::le_u32(cursor)?;
+        let (_, current_version) = nom::number::complete::le_u32(cursor)?;
+        let (_, compatibility_version) = nom::number::complete::le_u32(cursor)?;
+        let (_, name) =
+            LoadCommandBase::string_upto_null_terminator(&bytes[name_offset as usize..])?;
 
         Ok((
             end,
             DylibCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
-                dylib,
+                name,
+                timestamp,
+                current_version: LoadCommandBase::version_string(current_version),
+                compatibility_version: LoadCommandBase::version_string(compatibility_version),
             },
         ))
     }

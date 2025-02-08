@@ -4,9 +4,13 @@ mod header;
 mod load_command;
 mod parser;
 
-use macho2::MachO;
+use macho2::{FatMachO, MachO};
 
-use std::{env, fs::File, io::Read};
+use std::{
+    env,
+    fs::File,
+    io::{stdout, Read, Write},
+};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -30,7 +34,34 @@ fn main() {
         return;
     }
 
-    let macho = MachO::parse(&buffer).unwrap();
+    let macho: MachO = if FatMachO::is_fat_magic(&buffer) {
+        let fat_macho = FatMachO::parse(&buffer).unwrap();
+        println!("This is a fat macho file. Please select an architecture:");
+        for (i, arch) in fat_macho.archs.iter().enumerate() {
+            println!("{}: {:?}", i, arch.cputype());
+        }
+        print!("> ");
+
+        let index = loop {
+            let mut input = String::new();
+            stdout().flush().unwrap();
+            std::io::stdin().read_line(&mut input).unwrap();
+            match input.trim().parse::<usize>() {
+                Ok(i) if i < fat_macho.archs.len() => break i,
+                _ => println!(
+                    "Please enter a valid number between 0 and {}",
+                    fat_macho.archs.len() - 1
+                ),
+            }
+        };
+        fat_macho.macho(fat_macho.archs[index].cputype())
+    } else if MachO::is_macho_magic(&buffer) {
+        MachO::parse(&buffer).unwrap()
+    } else {
+        eprintln!("Invalid Mach-O file");
+        return;
+    };
+
     println!("{:#?}", macho.header);
     println!("{:#?}", macho.load_commands);
 }
