@@ -4,6 +4,7 @@ mod load_command;
 mod parser;
 
 use header::MachHeader;
+use macho2::LoadCommand;
 
 use std::{env, fs::File, io::Read};
 
@@ -29,12 +30,15 @@ fn main() {
         return;
     }
 
-    match MachHeader::parse(&buffer) {
-        Ok((remaining_bytes, mach_header)) => {
-            println!("Parsed MachHeader: {:#?}", mach_header);
-        }
-        Err(e) => {
-            eprintln!("Failed to parse MachHeader: {}", e);
-        }
+    let (bytes, header) = MachHeader::parse(&buffer).unwrap();
+    println!("Parsed MachHeader: {:#?}", header);
+
+    let mut cmds = Vec::new();
+    let mut remaining_bytes = bytes;
+    for _ in 0..header.ncmds() {
+        let (bytes, cmd) = LoadCommand::parse(remaining_bytes).unwrap();
+        println!("Command: {:#?}", cmd);
+        cmds.push(cmd);
+        remaining_bytes = bytes;
     }
 }

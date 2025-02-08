@@ -2,6 +2,7 @@
 
 use crate::flags::{LCLoadCommand, Protection, SGFlags, SectionAttributes, SectionType};
 
+#[derive(Debug, Clone, Copy)]
 pub struct LoadCommandBase {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -9,14 +10,35 @@ pub struct LoadCommandBase {
 
 impl LoadCommandBase {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], LoadCommandBase> {
-        let (bytes, cmd) = LCLoadCommand::parse(bytes)?;
-        let (bytes, cmdsize) = nom::number::complete::le_u32(bytes)?;
+        let (push, cmd) = LCLoadCommand::parse(bytes)?;
+        let (_, cmdsize) = nom::number::complete::le_u32(push)?;
 
+        println!("cmd: {:?}, cmdsize: {}", cmd, cmdsize);
         Ok((bytes, LoadCommandBase { cmd, cmdsize }))
+    }
+
+    fn skip(bytes: &[u8]) -> nom::IResult<&[u8], ()> {
+        let (remaining, _) = nom::bytes::complete::take(8usize)(bytes)?;
+        Ok((remaining, ()))
+    }
+
+    fn version_string(version: u32) -> String {
+        format!(
+            "{}.{}.{}",
+            (version >> 16) & 0xff,
+            (version >> 8) & 0xff,
+            version & 0xff
+        )
+    }
+
+    fn string_upto_null_terminator(bytes: &[u8]) -> nom::IResult<&[u8], String> {
+        let (_, name_bytes) = nom::bytes::complete::take_until("\0")(bytes)?;
+        let name = String::from_utf8(name_bytes.to_vec()).unwrap();
+        Ok((bytes, name))
     }
 }
 
-trait LoadCommand {
+pub trait LoadCommand {
     fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self>
     where
         Self: Sized;
@@ -40,10 +62,10 @@ pub struct Section32 {
 
 impl Section32 {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Self> {
-        let (bytes, sectname) = nom::bytes::complete::take(16usize)(bytes)?;
-        let sectname = String::from_utf8(sectname.to_vec()).unwrap();
-        let (bytes, segname) = nom::bytes::complete::take(16usize)(bytes)?;
-        let segname = String::from_utf8(segname.to_vec()).unwrap();
+        let (bytes, sectname_bytes) = nom::bytes::complete::take(16usize)(bytes)?;
+        let (_, sectname) = LoadCommandBase::string_upto_null_terminator(sectname_bytes)?;
+        let (bytes, segname_bytes) = nom::bytes::complete::take(16usize)(bytes)?;
+        let (_, segname) = LoadCommandBase::string_upto_null_terminator(segname_bytes)?;
         let (bytes, addr) = nom::number::complete::le_u32(bytes)?;
         let (bytes, size) = nom::number::complete::le_u32(bytes)?;
         let (bytes, offset) = nom::number::complete::le_u32(bytes)?;
@@ -113,9 +135,9 @@ pub struct Section64 {
 impl Section64 {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Self> {
         let (bytes, sectname) = nom::bytes::complete::take(16usize)(bytes)?;
-        let sectname = String::from_utf8(sectname.to_vec()).unwrap();
+        let (_, sectname) = LoadCommandBase::string_upto_null_terminator(sectname)?;
         let (bytes, segname) = nom::bytes::complete::take(16usize)(bytes)?;
-        let segname = String::from_utf8(segname.to_vec()).unwrap();
+        let (_, segname) = LoadCommandBase::string_upto_null_terminator(segname)?;
         let (bytes, addr) = nom::number::complete::le_u64(bytes)?;
         let (bytes, size) = nom::number::complete::le_u64(bytes)?;
         let (bytes, offset) = nom::number::complete::le_u32(bytes)?;
@@ -185,8 +207,10 @@ pub struct SegmentCommand32 {
 
 impl LoadCommand for SegmentCommand32 {
     fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+        let end = &bytes[base.cmdsize as usize..];
+        let (bytes, _) = LoadCommandBase::skip(bytes)?;
         let (bytes, segname) = nom::bytes::complete::take(16usize)(bytes)?;
-        let segname = String::from_utf8(segname.to_vec()).unwrap();
+        let (_, segname) = LoadCommandBase::string_upto_null_terminator(segname)?;
         let (bytes, vmaddr) = nom::number::complete::le_u32(bytes)?;
         let (bytes, vmsize) = nom::number::complete::le_u32(bytes)?;
         let (bytes, fileoff) = nom::number::complete::le_u32(bytes)?;
@@ -196,11 +220,6 @@ impl LoadCommand for SegmentCommand32 {
         let (bytes, nsects) = nom::number::complete::le_u32(bytes)?;
         let (bytes, flags) = SGFlags::parse(bytes)?;
 
-        assert!(
-            base.cmdsize as usize
-                == std::mem::size_of::<SegmentCommand32>()
-                    + nsects as usize * std::mem::size_of::<Section32>()
-        );
         let mut sects = Vec::new();
         let mut remaining_bytes = bytes;
         for _ in 0..nsects {
@@ -210,7 +229,7 @@ impl LoadCommand for SegmentCommand32 {
         }
 
         Ok((
-            remaining_bytes,
+            end,
             SegmentCommand32 {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -247,8 +266,10 @@ pub struct SegmentCommand64 {
 
 impl LoadCommand for SegmentCommand64 {
     fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+        let end = &bytes[base.cmdsize as usize..];
+        let (bytes, _) = LoadCommandBase::skip(bytes)?;
         let (bytes, segname) = nom::bytes::complete::take(16usize)(bytes)?;
-        let segname = String::from_utf8(segname.to_vec()).unwrap();
+        let (_, segname) = LoadCommandBase::string_upto_null_terminator(segname)?;
         let (bytes, vmaddr) = nom::number::complete::le_u64(bytes)?;
         let (bytes, vmsize) = nom::number::complete::le_u64(bytes)?;
         let (bytes, fileoff) = nom::number::complete::le_u64(bytes)?;
@@ -258,11 +279,6 @@ impl LoadCommand for SegmentCommand64 {
         let (bytes, nsects) = nom::number::complete::le_u32(bytes)?;
         let (bytes, flags) = SGFlags::parse(bytes)?;
 
-        assert!(
-            base.cmdsize as usize
-                == std::mem::size_of::<SegmentCommand64>()
-                    + nsects as usize * std::mem::size_of::<Section64>()
-        );
         let mut sections = Vec::new();
         let mut remaining_bytes = bytes;
         for _ in 0..nsects {
@@ -272,7 +288,7 @@ impl LoadCommand for SegmentCommand64 {
         }
 
         Ok((
-            remaining_bytes,
+            end,
             SegmentCommand64 {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -286,6 +302,87 @@ impl LoadCommand for SegmentCommand64 {
                 nsects,
                 flags,
                 sections,
+            },
+        ))
+    }
+}
+
+#[derive(Debug)]
+pub struct SymsegCommand {
+    pub cmd: LCLoadCommand,
+    pub cmdsize: u32,
+    pub offset: u32,
+    pub size: u32,
+}
+
+impl LoadCommand for SymsegCommand {
+    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+        let end = &bytes[base.cmdsize as usize..];
+        let (bytes, _) = LoadCommandBase::skip(bytes)?;
+        let (bytes, offset) = nom::number::complete::le_u32(bytes)?;
+        let (_, size) = nom::number::complete::le_u32(bytes)?;
+
+        Ok((
+            end,
+            SymsegCommand {
+                cmd: base.cmd,
+                cmdsize: base.cmdsize,
+                offset,
+                size,
+            },
+        ))
+    }
+}
+
+#[derive(Debug)]
+pub struct Dylib {
+    pub name: String,
+    pub timestamp: u32,
+    pub current_version: String,
+    pub compatibility_version: String,
+}
+
+impl Dylib {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Self> {
+        let (bytes, name_offset) = nom::number::complete::le_u32(bytes)?;
+        let (_, name_bytes) =
+            nom::bytes::complete::take_until("\0")(&bytes[name_offset as usize..])?;
+        let (_, name) = LoadCommandBase::string_upto_null_terminator(name_bytes)?;
+        let (bytes, timestamp) = nom::number::complete::le_u32(bytes)?;
+        let (bytes, current_version) = nom::number::complete::le_u32(bytes)?;
+        let (bytes, compatibility_version) = nom::number::complete::le_u32(bytes)?;
+
+        Ok((
+            bytes,
+            Dylib {
+                name,
+                timestamp,
+                current_version: LoadCommandBase::version_string(current_version),
+                compatibility_version: LoadCommandBase::version_string(compatibility_version),
+            },
+        ))
+    }
+}
+
+#[derive(Debug)]
+pub struct DylibCommand {
+    pub cmd: LCLoadCommand,
+    pub cmdsize: u32,
+    pub dylib: Dylib,
+}
+
+impl LoadCommand for DylibCommand {
+    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+        let end = &bytes[base.cmdsize as usize..];
+        let (bytes, _) = LoadCommandBase::skip(bytes)?;
+        let (_, dylib) = Dylib::parse(bytes)?;
+
+        Ok((
+            end,
+            DylibCommand {
+                cmd: base.cmd,
+                cmdsize: base.cmdsize,
+                dylib,
             },
         ))
     }
