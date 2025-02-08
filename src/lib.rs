@@ -1,4 +1,11 @@
-use flags::LCLoadCommand;
+mod fat;
+mod flags;
+mod header;
+mod load_command;
+mod parser;
+
+use fat::{FatArch, FatHeader};
+use flags::{FatMagic, LCLoadCommand, MHMagic};
 use header::MachHeader;
 use load_command::{
     BuildVersionCommand, DyldInfoCommand, DylibCommand, DylinkerCommand, DysymtabCommand,
@@ -11,11 +18,6 @@ use load_command::{
 };
 
 use load_command::LoadCommand as IOnlyNeedThisForTheTrait;
-
-mod flags;
-mod header;
-mod load_command;
-mod parser;
 
 #[derive(Debug)]
 pub enum LoadCommand {
@@ -284,6 +286,11 @@ pub struct MachO {
 }
 
 impl MachO {
+    pub fn is_macho_magic(bytes: &[u8]) -> bool {
+        let magic = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        magic == MHMagic::MhMagic as u32 || magic == MHMagic::MhMagic64 as u32
+    }
+
     pub fn parse(bytes: &[u8]) -> Result<Self, nom::Err<nom::error::Error<&[u8]>>> {
         let (mut cursor, header) = MachHeader::parse(bytes)?;
         let mut cmds = Vec::new();
@@ -298,5 +305,29 @@ impl MachO {
             load_commands: cmds,
             bytes: bytes.to_vec(),
         })
+    }
+}
+
+pub struct FatMachO {
+    pub header: FatHeader,
+    pub archs: Vec<FatArch>,
+}
+
+impl FatMachO {
+    pub fn is_fat_magic(bytes: &[u8]) -> bool {
+        let magic = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        magic == FatMagic::Fat as u32 || magic == FatMagic::Fat64 as u32
+    }
+
+    pub fn parse(bytes: &[u8]) -> Result<Self, nom::Err<nom::error::Error<&[u8]>>> {
+        let (mut cursor, header) = FatHeader::parse(bytes)?;
+        let mut archs = Vec::new();
+        for _ in 0..header.nfat_arch {
+            let (next, arch) = FatArch::parse(cursor, header.magic).unwrap();
+            archs.push(arch);
+            cursor = next;
+        }
+
+        Ok(Self { header, archs })
     }
 }

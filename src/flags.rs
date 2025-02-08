@@ -141,6 +141,17 @@ impl CpuType {
             ))),
         }
     }
+
+    pub fn parse_be(bytes: &[u8]) -> nom::IResult<&[u8], CpuType> {
+        let (bytes, cputype) = nom::number::complete::be_u32(bytes)?;
+        match num::FromPrimitive::from_u32(cputype) {
+            Some(cputype) => Ok((bytes, cputype)),
+            None => Err(nom::Err::Failure(nom::error::Error::new(
+                bytes,
+                nom::error::ErrorKind::Tag,
+            ))),
+        }
+    }
 }
 
 #[repr(u32)]
@@ -393,6 +404,26 @@ impl Platform {
         let (bytes, platform) = nom::number::complete::le_u32(bytes)?;
         match num::FromPrimitive::from_u32(platform) {
             Some(platform) => Ok((bytes, platform)),
+            None => Err(nom::Err::Failure(nom::error::Error::new(
+                bytes,
+                nom::error::ErrorKind::Tag,
+            ))),
+        }
+    }
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
+pub enum FatMagic {
+    Fat = 0xcafebabe,
+    Fat64 = 0xcafebabf,
+}
+
+impl FatMagic {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], FatMagic> {
+        let (bytes, magic) = nom::number::complete::le_u32(bytes)?;
+        match num::FromPrimitive::from_u32(magic) {
+            Some(magic) => Ok((bytes, magic)),
             None => Err(nom::Err::Failure(nom::error::Error::new(
                 bytes,
                 nom::error::ErrorKind::Tag,
