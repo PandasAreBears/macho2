@@ -161,6 +161,7 @@ pub enum LCLoadCommand {
     LcSymtab = 0x2,
     LcSymseg = 0x3,
     LcThread = 0x4,
+    LcUnixThread = 0x5,
     LcDysymtab = 0xb,
     LcLoadDylib = 0xc,
     LcIdDylib = 0xd,
@@ -213,6 +214,7 @@ impl LCLoadCommand {
 
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], LCLoadCommand> {
         let (bytes, cmd) = nom::number::complete::le_u32(bytes)?;
+        println!("cmd: {:#x}", cmd);
         match num::FromPrimitive::from_u32(cmd) {
             Some(cmd) => Ok((bytes, cmd)),
             None => Err(nom::Err::Failure(nom::error::Error::new(

@@ -14,8 +14,11 @@ pub struct LoadCommandBase {
 
 impl LoadCommandBase {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], LoadCommandBase> {
+        println!("hi1");
         let (push, cmd) = LCLoadCommand::parse(bytes)?;
+        println!("hi2");
         let (_, cmdsize) = nom::number::complete::le_u32(push)?;
+        println!("hi3");
 
         Ok((bytes, LoadCommandBase { cmd, cmdsize }))
     }
@@ -1161,6 +1164,7 @@ impl LoadCommand for SourceVersionCommand {
     fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
 
+        // TODO: WHY BROKEN?
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, version) = nom::number::complete::le_u64(cursor)?;
 

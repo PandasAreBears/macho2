@@ -25,6 +25,7 @@ pub enum LoadCommand {
     Symtab(SymtabCommand),
     Symseg(SymsegCommand),
     Thread(ThreadCommand),
+    UnixThread(ThreadCommand),
     Dysymtab(DysymtabCommand),
     LoadDylib(DylibCommand),
     DylibId(DylibCommand),
@@ -75,6 +76,7 @@ pub enum LoadCommand {
 impl LoadCommand {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Self> {
         let (bytes, base) = load_command::LoadCommandBase::parse(bytes)?;
+        println!("{:#?}", base);
 
         match base.cmd {
             LCLoadCommand::LcSegment => {
@@ -112,9 +114,13 @@ impl LoadCommand {
                 let (bytes, cmd) = SymsegCommand::parse(bytes, base)?;
                 Ok((bytes, LoadCommand::Symseg(cmd)))
             }
-            LCLoadCommand::LcThread => {
+            LCLoadCommand::LcThread | LCLoadCommand::LcUnixThread => {
                 let (bytes, cmd) = ThreadCommand::parse(bytes, base)?;
-                Ok((bytes, LoadCommand::Thread(cmd)))
+                match base.cmd {
+                    LCLoadCommand::LcThread => Ok((bytes, LoadCommand::Thread(cmd))),
+                    LCLoadCommand::LcUnixThread => Ok((bytes, LoadCommand::UnixThread(cmd))),
+                    _ => unreachable!(),
+                }
             }
             LCLoadCommand::LcDysymtab => {
                 let (bytes, cmd) = DysymtabCommand::parse(bytes, base)?;
@@ -296,6 +302,7 @@ impl MachO {
         let mut cmds = Vec::new();
         for _ in 0..header.ncmds() {
             let (next, cmd) = LoadCommand::parse(cursor).unwrap();
+            println!("{:#?}", cmd);
             cmds.push(cmd);
             cursor = next;
         }
