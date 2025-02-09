@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use nom::Parser;
 use num_derive::FromPrimitive;
 
 #[repr(usize)]
@@ -265,5 +266,251 @@ impl CpuSubTypeArm64 {
                 nom::error::ErrorKind::Tag,
             ))),
         }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ThreadStateFlavor {
+    X86Flavor(ThreadStateX86Flavor),
+    Arm64Flavor(ThreadStateArm64Flavor),
+}
+
+impl ThreadStateFlavor {
+    pub fn parse(bytes: &[u8], cpu: CpuType) -> nom::IResult<&[u8], ThreadStateFlavor> {
+        match cpu {
+            CpuType::X86_64 => {
+                let (bytes, flavor) = ThreadStateX86Flavor::parse(bytes)?;
+                Ok((bytes, ThreadStateFlavor::X86Flavor(flavor)))
+            }
+            CpuType::Arm64 => {
+                let (bytes, flavor) = ThreadStateArm64Flavor::parse(bytes)?;
+                Ok((bytes, ThreadStateFlavor::Arm64Flavor(flavor)))
+            }
+            _ => Err(nom::Err::Failure(nom::error::Error::new(
+                bytes,
+                nom::error::ErrorKind::Tag,
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ThreadState {
+    X86State(X86ThreadState),
+    Arm64State(Arm64ThreadState),
+}
+
+impl ThreadState {
+    pub fn parse(bytes: &[u8], base: ThreadStateBase) -> nom::IResult<&[u8], ThreadState> {
+        match base.flavor {
+            ThreadStateFlavor::X86Flavor(flavor) => {
+                let (bytes, state) = X86ThreadState::parse(bytes, flavor)?;
+                Ok((bytes, ThreadState::X86State(state)))
+            }
+            ThreadStateFlavor::Arm64Flavor(flavor) => {
+                let (bytes, state) = Arm64ThreadState::parse(bytes, flavor)?;
+                Ok((bytes, ThreadState::Arm64State(state)))
+            }
+        }
+    }
+}
+
+pub struct ThreadStateBase {
+    pub flavor: ThreadStateFlavor,
+    pub count: u32,
+}
+
+impl ThreadStateBase {
+    pub fn parse(bytes: &[u8], cpu: CpuType) -> nom::IResult<&[u8], ThreadStateBase> {
+        let (bytes, flavor) = ThreadStateFlavor::parse(bytes, cpu)?;
+        let (bytes, count) = nom::number::complete::le_u32(bytes)?;
+
+        Ok((bytes, ThreadStateBase { flavor, count }))
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
+pub enum ThreadStateX86Flavor {
+    X86ThreadState64 = 4,
+}
+
+impl ThreadStateX86Flavor {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], ThreadStateX86Flavor> {
+        let (bytes, flavor) = nom::number::complete::le_u32(bytes)?;
+        match num::FromPrimitive::from_u32(flavor) {
+            Some(flavor) => Ok((bytes, flavor)),
+            None => Err(nom::Err::Failure(nom::error::Error::new(
+                bytes,
+                nom::error::ErrorKind::Tag,
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum X86ThreadState {
+    X86ThreadState64(X86ThreadState64),
+}
+
+impl X86ThreadState {
+    pub fn parse(
+        bytes: &[u8],
+        flavor: ThreadStateX86Flavor,
+    ) -> nom::IResult<&[u8], X86ThreadState> {
+        match flavor {
+            ThreadStateX86Flavor::X86ThreadState64 => {
+                let (bytes, state) = X86ThreadState64::parse(bytes)?;
+                Ok((bytes, X86ThreadState::X86ThreadState64(state)))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct X86ThreadState64 {
+    pub rax: u64,
+    pub rbx: u64,
+    pub rcx: u64,
+    pub rdx: u64,
+    pub rdi: u64,
+    pub rsi: u64,
+    pub rbp: u64,
+    pub rsp: u64,
+    pub r8: u64,
+    pub r9: u64,
+    pub r10: u64,
+    pub r11: u64,
+    pub r12: u64,
+    pub r13: u64,
+    pub r14: u64,
+    pub r15: u64,
+    pub rip: u64,
+    pub rflags: u64,
+    pub cs: u64,
+    pub fs: u64,
+    pub gs: u64,
+}
+
+impl X86ThreadState64 {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], X86ThreadState64> {
+        let (bytes, rax) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, rbx) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, rcx) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, rdx) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, rdi) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, rsi) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, rbp) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, rsp) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, r8) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, r9) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, r10) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, r11) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, r12) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, r13) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, r14) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, r15) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, rip) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, rflags) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, cs) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, fs) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, gs) = nom::number::complete::le_u64(bytes)?;
+
+        Ok((
+            bytes,
+            X86ThreadState64 {
+                rax,
+                rbx,
+                rcx,
+                rdx,
+                rdi,
+                rsi,
+                rbp,
+                rsp,
+                r8,
+                r9,
+                r10,
+                r11,
+                r12,
+                r13,
+                r14,
+                r15,
+                rip,
+                rflags,
+                cs,
+                fs,
+                gs,
+            },
+        ))
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
+pub enum ThreadStateArm64Flavor {
+    Arm64ThreadState64 = 6,
+}
+
+impl ThreadStateArm64Flavor {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], ThreadStateArm64Flavor> {
+        let (bytes, flavor) = nom::number::complete::le_u32(bytes)?;
+        match num::FromPrimitive::from_u32(flavor) {
+            Some(flavor) => Ok((bytes, flavor)),
+            None => Err(nom::Err::Failure(nom::error::Error::new(
+                bytes,
+                nom::error::ErrorKind::Tag,
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Arm64ThreadState {
+    Arm64ThreadState64(Arm64ThreadState64),
+}
+
+impl Arm64ThreadState {
+    pub fn parse(
+        bytes: &[u8],
+        flavor: ThreadStateArm64Flavor,
+    ) -> nom::IResult<&[u8], Arm64ThreadState> {
+        match flavor {
+            ThreadStateArm64Flavor::Arm64ThreadState64 => {
+                let (bytes, state) = Arm64ThreadState64::parse(bytes)?;
+                Ok((bytes, Arm64ThreadState::Arm64ThreadState64(state)))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Arm64ThreadState64 {
+    pub x: [u64; 29],
+    pub fp: u64,
+    pub lr: u64,
+    pub sp: u64,
+    pub pc: u64,
+    pub cpsr: u64,
+}
+
+impl Arm64ThreadState64 {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Arm64ThreadState64> {
+        let (bytes, x_vec) = nom::multi::count(nom::number::complete::le_u64, 29).parse(bytes)?;
+        let x: [u64; 29] = x_vec.try_into().unwrap();
+        let (bytes, fp) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, lr) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, sp) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, pc) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, cpsr) = nom::number::complete::le_u64(bytes)?;
+
+        Ok((
+            bytes,
+            Arm64ThreadState64 {
+                x,
+                fp,
+                lr,
+                sp,
+                pc,
+                cpsr,
+            },
+        ))
     }
 }

@@ -1,8 +1,12 @@
 #![allow(dead_code)]
 
-use crate::flags::{
-    DylibUseFlags, LCLoadCommand, Platform, Protection, SGFlags, SectionAttributes, SectionType,
-    Tool,
+use crate::{
+    flags::{
+        DylibUseFlags, LCLoadCommand, Platform, Protection, SGFlags, SectionAttributes,
+        SectionType, Tool,
+    },
+    header::MachHeader,
+    machine::{ThreadState, ThreadStateBase},
 };
 use uuid::Uuid;
 
@@ -14,11 +18,8 @@ pub struct LoadCommandBase {
 
 impl LoadCommandBase {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], LoadCommandBase> {
-        println!("hi1");
         let (push, cmd) = LCLoadCommand::parse(bytes)?;
-        println!("hi2");
         let (_, cmdsize) = nom::number::complete::le_u32(push)?;
-        println!("hi3");
 
         Ok((bytes, LoadCommandBase { cmd, cmdsize }))
     }
@@ -51,7 +52,7 @@ impl LoadCommandBase {
 }
 
 pub trait LoadCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self>
+    fn parse(bytes: &[u8], base: LoadCommandBase, header: MachHeader) -> nom::IResult<&[u8], Self>
     where
         Self: Sized;
 }
@@ -218,7 +219,7 @@ pub struct SegmentCommand32 {
 }
 
 impl LoadCommand for SegmentCommand32 {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, segname) = nom::bytes::complete::take(16usize)(cursor)?;
@@ -277,7 +278,7 @@ pub struct SegmentCommand64 {
 }
 
 impl LoadCommand for SegmentCommand64 {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, segname) = nom::bytes::complete::take(16usize)(cursor)?;
@@ -327,7 +328,7 @@ pub struct SymsegCommand {
 }
 
 impl LoadCommand for SymsegCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, offset) = nom::number::complete::le_u32(cursor)?;
@@ -356,7 +357,7 @@ pub struct DylibCommand {
 }
 
 impl LoadCommand for DylibCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, name_offset) = nom::number::complete::le_u32(cursor)?;
@@ -392,7 +393,7 @@ pub struct DylibUseCommand {
 }
 
 impl LoadCommand for DylibUseCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, nameoff) = nom::number::complete::le_u32(cursor)?;
@@ -424,7 +425,7 @@ pub struct SubFrameworkCommand {
 }
 
 impl LoadCommand for SubFrameworkCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, umbrella_offset) = nom::number::complete::le_u32(cursor)?;
@@ -450,7 +451,7 @@ pub struct SubClientCommand {
 }
 
 impl LoadCommand for SubClientCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, client_offset) = nom::number::complete::le_u32(cursor)?;
@@ -476,7 +477,7 @@ pub struct SubUmbrellaCommand {
 }
 
 impl LoadCommand for SubUmbrellaCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, sub_umbrella_offset) = nom::number::complete::le_u32(cursor)?;
@@ -502,7 +503,7 @@ pub struct SubLibraryCommand {
 }
 
 impl LoadCommand for SubLibraryCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, sub_library_offset) = nom::number::complete::le_u32(cursor)?;
@@ -530,7 +531,7 @@ pub struct PreboundDylibCommand {
 }
 
 impl LoadCommand for PreboundDylibCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, name_offset) = nom::number::complete::le_u32(cursor)?;
@@ -563,7 +564,7 @@ pub struct DylinkerCommand {
 }
 
 impl LoadCommand for DylinkerCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, name_offset) = nom::number::complete::le_u32(cursor)?;
@@ -585,17 +586,29 @@ impl LoadCommand for DylinkerCommand {
 pub struct ThreadCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
-    // TODO: What goes here?
+    pub threads: Vec<ThreadState>,
 }
 
 impl LoadCommand for ThreadCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, header: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
+
+        let (mut cursor, _) = LoadCommandBase::skip(bytes)?;
+
+        let mut threads = Vec::new();
+        while cursor.as_ptr() < end.as_ptr() {
+            let (next, tsbase) = ThreadStateBase::parse(cursor, *header.cputype())?;
+            let (next, thread) = ThreadState::parse(next, tsbase)?;
+            cursor = next;
+            threads.push(thread);
+        }
+
         Ok((
             end,
             ThreadCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
+                threads,
             },
         ))
     }
@@ -616,7 +629,7 @@ pub struct RoutinesCommand64 {
 }
 
 impl LoadCommand for RoutinesCommand64 {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, init_address) = nom::number::complete::le_u64(cursor)?;
@@ -657,7 +670,7 @@ pub struct SymtabCommand {
 }
 
 impl LoadCommand for SymtabCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, symoff) = nom::number::complete::le_u32(cursor)?;
@@ -704,7 +717,7 @@ pub struct DysymtabCommand {
 }
 
 impl LoadCommand for DysymtabCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, ilocalsym) = nom::number::complete::le_u32(cursor)?;
@@ -763,7 +776,7 @@ pub struct TwoLevelHintsCommand {
 }
 
 impl LoadCommand for TwoLevelHintsCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, offset) = nom::number::complete::le_u32(cursor)?;
@@ -789,7 +802,7 @@ pub struct PrebindCksumCommand {
 }
 
 impl LoadCommand for PrebindCksumCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, cksum) = nom::number::complete::le_u32(cursor)?;
@@ -813,7 +826,7 @@ pub struct UuidCommand {
 }
 
 impl LoadCommand for UuidCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, uuid) = nom::number::complete::le_u128(cursor)?;
@@ -837,7 +850,7 @@ pub struct RpathCommand {
 }
 
 impl LoadCommand for RpathCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, path_offset) = nom::number::complete::le_u32(cursor)?;
@@ -864,7 +877,7 @@ pub struct LinkeditDataCommand {
 }
 
 impl LoadCommand for LinkeditDataCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, dataoff) = nom::number::complete::le_u32(cursor)?;
@@ -892,7 +905,7 @@ pub struct EncryptionInfoCommand {
 }
 
 impl LoadCommand for EncryptionInfoCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, cryptoff) = nom::number::complete::le_u32(cursor)?;
@@ -923,7 +936,7 @@ pub struct EncryptionInfoCommand64 {
 }
 
 impl LoadCommand for EncryptionInfoCommand64 {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, cryptoff) = nom::number::complete::le_u32(cursor)?;
@@ -954,7 +967,7 @@ pub struct VersionMinCommand {
 }
 
 impl LoadCommand for VersionMinCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, version) = nom::number::complete::le_u32(cursor)?;
@@ -1005,7 +1018,7 @@ pub struct BuildVersionCommand {
 }
 
 impl LoadCommand for BuildVersionCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, platform) = Platform::parse(cursor)?;
         let (cursor, minos) = nom::number::complete::le_u32(cursor)?;
@@ -1053,7 +1066,7 @@ pub struct DyldInfoCommand {
 }
 
 impl LoadCommand for DyldInfoCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
 
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
@@ -1099,7 +1112,7 @@ pub struct LinkerOptionCommand {
 }
 
 impl LoadCommand for LinkerOptionCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let mut remaining_bytes = bytes;
         let end = &bytes[base.cmdsize as usize..];
 
@@ -1134,7 +1147,7 @@ pub struct EntryPointCommand {
 }
 
 impl LoadCommand for EntryPointCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
 
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
@@ -1161,7 +1174,7 @@ pub struct SourceVersionCommand {
 }
 
 impl LoadCommand for SourceVersionCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
 
         // TODO: WHY BROKEN?
@@ -1196,7 +1209,7 @@ pub struct NoteCommand {
 }
 
 impl LoadCommand for NoteCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
 
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
@@ -1232,7 +1245,7 @@ pub struct FilesetEntryCommand {
 }
 
 impl LoadCommand for FilesetEntryCommand {
-    fn parse(bytes: &[u8], base: LoadCommandBase) -> nom::IResult<&[u8], Self> {
+    fn parse(bytes: &[u8], base: LoadCommandBase, _: MachHeader) -> nom::IResult<&[u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
 
         let (cursor, _) = LoadCommandBase::skip(bytes)?;

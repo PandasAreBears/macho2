@@ -5,7 +5,7 @@ use nom::IResult;
 use crate::flags::{MHFileType, MHFlags, MHMagic};
 use crate::machine::{CpuSubType, CpuType};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct MachHeader32 {
     pub magic: MHMagic,
     pub cputype: CpuType,
@@ -41,7 +41,7 @@ impl MachHeader32 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct MachHeader64 {
     pub magic: MHMagic,
     pub cputype: CpuType,
@@ -80,7 +80,7 @@ impl MachHeader64 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum MachHeader {
     Header32(MachHeader32),
     Header64(MachHeader64),
