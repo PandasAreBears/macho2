@@ -82,6 +82,7 @@ impl FatArch64 {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum FatArch {
     Arch32(FatArch32),
     Arch64(FatArch64),

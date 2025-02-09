@@ -1,10 +1,4 @@
-mod fat;
-mod flags;
-mod header;
-mod load_command;
-mod machine;
-
-use macho::{FatMachO, MachO};
+use macho2::{FatMachO, MachO};
 
 use std::{
     env,

@@ -2,6 +2,7 @@
 
 use nom::Parser;
 use num_derive::FromPrimitive;
+use strum_macros::Display;
 
 #[repr(usize)]
 #[derive(Debug, Copy, Clone, FromPrimitive)]
@@ -14,7 +15,7 @@ impl CpuABI {
 }
 
 #[repr(u32)]
-#[derive(Debug, Copy, Clone, FromPrimitive, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, FromPrimitive, PartialEq, Eq, Display)]
 pub enum CpuType {
     Any = 0,
     Vax = 1,
