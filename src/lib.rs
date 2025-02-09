@@ -1,8 +1,8 @@
-mod fat;
-mod flags;
-mod header;
-mod load_command;
-mod machine;
+pub mod fat;
+pub mod flags;
+pub mod header;
+pub mod load_command;
+pub mod machine;
 
 use fat::{FatArch, FatHeader};
 use flags::{FatMagic, LCLoadCommand, MHMagic};
