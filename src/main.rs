@@ -2,7 +2,6 @@ mod fat;
 mod flags;
 mod header;
 mod load_command;
-mod parser;
 
 use macho2::{FatMachO, MachO};
 
