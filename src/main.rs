@@ -4,7 +4,7 @@ mod header;
 mod load_command;
 mod machine;
 
-use macho2::{FatMachO, MachO};
+use macho::{FatMachO, MachO};
 
 use std::{
     env,

@@ -1,2 +1,5 @@
 /target
-Cargo.lock
+/pocs
+/headers
+cargo.lock
+Notes.md
