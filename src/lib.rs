@@ -2,6 +2,7 @@ mod fat;
 mod flags;
 mod header;
 mod load_command;
+mod machine;
 
 use fat::{FatArch, FatHeader};
 use flags::{FatMagic, LCLoadCommand, MHMagic};
@@ -342,7 +343,7 @@ impl<'a> FatMachO<'a> {
         })
     }
 
-    pub fn macho(&self, cputype: flags::CpuType) -> MachO {
+    pub fn macho(&self, cputype: machine::CpuType) -> MachO {
         let arch = self
             .archs
             .iter()

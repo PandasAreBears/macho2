@@ -2,13 +2,14 @@
 
 use nom::IResult;
 
-use crate::flags::{CpuType, MHFileType, MHFlags, MHMagic};
+use crate::flags::{MHFileType, MHFlags, MHMagic};
+use crate::machine::{CpuSubType, CpuType};
 
 #[derive(Debug)]
 pub struct MachHeader32 {
     pub magic: MHMagic,
     pub cputype: CpuType,
-    pub cpusubtype: i32,
+    pub cpusubtype: CpuSubType,
     pub filetype: MHFileType,
     pub ncmds: u32,
     pub sizeofcmds: u32,
@@ -19,7 +20,7 @@ impl MachHeader32 {
     pub fn parse(bytes: &[u8]) -> IResult<&[u8], MachHeader32> {
         let (bytes, magic) = MHMagic::parse(bytes)?;
         let (bytes, cputype) = CpuType::parse(bytes)?;
-        let (bytes, cpusubtype) = nom::number::complete::le_i32(bytes)?;
+        let (bytes, cpusubtype) = CpuSubType::parse(bytes, cputype)?;
         let (bytes, filetype) = MHFileType::parse(bytes)?;
         let (bytes, ncmds) = nom::number::complete::le_u32(bytes)?;
         let (bytes, sizeofcmds) = nom::number::complete::le_u32(bytes)?;
@@ -44,7 +45,7 @@ impl MachHeader32 {
 pub struct MachHeader64 {
     pub magic: MHMagic,
     pub cputype: CpuType,
-    pub cpusubtype: i32,
+    pub cpusubtype: CpuSubType,
     pub filetype: MHFileType,
     pub ncmds: u32,
     pub sizeofcmds: u32,
@@ -56,7 +57,7 @@ impl MachHeader64 {
     pub fn parse(bytes: &[u8]) -> IResult<&[u8], MachHeader64> {
         let (bytes, magic) = MHMagic::parse(bytes)?;
         let (bytes, cputype) = CpuType::parse(bytes)?;
-        let (bytes, cpusubtype) = nom::number::complete::le_i32(bytes)?;
+        let (bytes, cpusubtype) = CpuSubType::parse(bytes, cputype)?;
         let (bytes, filetype) = MHFileType::parse(bytes)?;
         let (bytes, ncmds) = nom::number::complete::le_u32(bytes)?;
         let (bytes, sizeofcmds) = nom::number::complete::le_u32(bytes)?;
@@ -115,7 +116,7 @@ impl MachHeader {
         }
     }
 
-    pub fn cpusubtype(&self) -> i32 {
+    pub fn cpusubtype(&self) -> CpuSubType {
         match self {
             MachHeader::Header32(h) => h.cpusubtype,
             MachHeader::Header64(h) => h.cpusubtype,

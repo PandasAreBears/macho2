@@ -2,6 +2,7 @@ mod fat;
 mod flags;
 mod header;
 mod load_command;
+mod machine;
 
 use macho2::{FatMachO, MachO};
 
@@ -37,7 +38,7 @@ fn main() {
         let fat_macho = FatMachO::parse(&buffer).unwrap();
         println!("This is a fat macho file. Please select an architecture:");
         for (i, arch) in fat_macho.archs.iter().enumerate() {
-            println!("{}: {:?}", i, arch.cputype());
+            println!("{}: {:?} {:?}", i, arch.cputype(), arch.cpusubtype());
         }
         print!("> ");
 

@@ -100,60 +100,6 @@ impl MHFileType {
     }
 }
 
-#[repr(usize)]
-#[derive(Debug, Copy, Clone, FromPrimitive)]
-pub enum CpuABI {
-    ABI64 = 0x01000000,
-    ABI64_32 = 0x02000000,
-}
-impl CpuABI {
-    pub const MASK: usize = 0xff000000;
-}
-
-#[repr(u32)]
-#[derive(Debug, Copy, Clone, FromPrimitive, PartialEq, Eq)]
-pub enum CpuType {
-    Any = 0,
-    Vax = 1,
-    Mc680x0 = 6,
-    I386 = 7,
-    X86_64 = 7 | CpuABI::ABI64 as u32,
-    Mc98000 = 10,
-    Hppa = 11,
-    Arm = 12,
-    Arm64 = 12 | CpuABI::ABI64 as u32,
-    Arm64_32 = 12 | CpuABI::ABI64_32 as u32,
-    Mc88000 = 13,
-    Sparc = 14,
-    I860 = 15,
-    PowerPC = 18,
-    PowerPC64 = 18 | CpuABI::ABI64 as u32,
-}
-
-impl CpuType {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CpuType> {
-        let (bytes, cputype) = nom::number::complete::le_u32(bytes)?;
-        match num::FromPrimitive::from_u32(cputype) {
-            Some(cputype) => Ok((bytes, cputype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
-        }
-    }
-
-    pub fn parse_be(bytes: &[u8]) -> nom::IResult<&[u8], CpuType> {
-        let (bytes, cputype) = nom::number::complete::be_u32(bytes)?;
-        match num::FromPrimitive::from_u32(cputype) {
-            Some(cputype) => Ok((bytes, cputype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
-        }
-    }
-}
-
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
 pub enum LCLoadCommand {

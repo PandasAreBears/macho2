@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
-use crate::flags::{CpuType, FatMagic};
+use crate::flags::FatMagic;
+use crate::machine::{CpuSubType, CpuType};
 use nom;
 
 #[derive(Debug, Clone, Copy)]
@@ -21,7 +22,7 @@ impl FatHeader {
 #[derive(Debug, Clone, Copy)]
 pub struct FatArch32 {
     pub cputype: CpuType,
-    pub cpusubtype: i32,
+    pub cpusubtype: CpuSubType,
     pub offset: u32,
     pub size: u32,
     pub align: u32,
@@ -30,7 +31,7 @@ pub struct FatArch32 {
 impl FatArch32 {
     pub fn parse(input: &[u8]) -> nom::IResult<&[u8], FatArch32> {
         let (input, cputype) = CpuType::parse_be(input)?;
-        let (input, cpusubtype) = nom::number::complete::be_i32(input)?;
+        let (input, cpusubtype) = CpuSubType::parse_be(input, cputype)?;
         let (input, offset) = nom::number::complete::be_u32(input)?;
         let (input, size) = nom::number::complete::be_u32(input)?;
         let (input, align) = nom::number::complete::be_u32(input)?;
@@ -51,7 +52,7 @@ impl FatArch32 {
 #[derive(Debug, Clone, Copy)]
 pub struct FatArch64 {
     pub cputype: CpuType,
-    pub cpusubtype: i32,
+    pub cpusubtype: CpuSubType,
     pub offset: u64,
     pub size: u64,
     pub align: u32,
@@ -61,7 +62,7 @@ pub struct FatArch64 {
 impl FatArch64 {
     pub fn parse(input: &[u8]) -> nom::IResult<&[u8], FatArch64> {
         let (input, cputype) = CpuType::parse_be(input)?;
-        let (input, cpusubtype) = nom::number::complete::be_i32(input)?;
+        let (input, cpusubtype) = CpuSubType::parse_be(input, cputype)?;
         let (input, offset) = nom::number::complete::be_u64(input)?;
         let (input, size) = nom::number::complete::be_u64(input)?;
         let (input, align) = nom::number::complete::be_u32(input)?;
@@ -107,7 +108,7 @@ impl FatArch {
         }
     }
 
-    pub fn cpusubtype(&self) -> i32 {
+    pub fn cpusubtype(&self) -> CpuSubType {
         match self {
             FatArch::Arch32(arch) => arch.cpusubtype,
             FatArch::Arch64(arch) => arch.cpusubtype,
