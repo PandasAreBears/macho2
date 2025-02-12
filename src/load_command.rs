@@ -2,8 +2,8 @@
 
 use crate::{
     flags::{
-        DylibUseFlags, LCLoadCommand, Platform, Protection, SGFlags, SectionAttributes,
-        SectionType, Tool,
+        DylibUseFlags, LCLoadCommand, NlistReferenceType, NlistTypeType, Platform, Protection,
+        SGFlags, SectionAttributes, SectionType, Tool,
     },
     header::MachHeader,
     machine::{ThreadState, ThreadStateBase},
@@ -48,6 +48,20 @@ impl LoadCommandBase {
             };
         let name = String::from_utf8(name_bytes.to_vec()).unwrap();
         Ok((&bytes[1..], name))
+    }
+
+    fn string_upto_null_terminator_many(bytes: &[u8]) -> nom::IResult<&[u8], Vec<String>> {
+        let mut strings = Vec::new();
+        let mut remaining_bytes = bytes;
+        loop {
+            let (bytes, name) = LoadCommandBase::string_upto_null_terminator(remaining_bytes)?;
+            strings.push(name);
+            if bytes.is_empty() {
+                break;
+            }
+            remaining_bytes = bytes;
+        }
+        Ok((&[], strings))
     }
 }
 
@@ -729,6 +743,104 @@ impl LoadCommand for RoutinesCommand64 {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NlistDesc {
+    pub reference_type: NlistReferenceType,
+    pub referenced_dynamically: bool,
+    pub no_dead_strip: bool,
+    pub n_weak_ref: bool,
+    pub n_weak_def: bool,
+    pub library_ordinal: u8,
+}
+
+impl NlistDesc {
+    pub const REFERENCED_DYNAMICALLY_BITMASK: u16 = 0x100;
+    pub const NO_DEAD_STRIP_BITMASK: u16 = 0x200;
+    pub const N_WEAK_REF_BITMASK: u16 = 0x400;
+    pub const N_WEAK_DEF_BITMASK: u16 = 0x800;
+    pub const LIBRARY_ORDINAL_BITMASK: u16 = 0xff00;
+
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], NlistDesc> {
+        let cursor = bytes;
+        let (bytes, n_desc) = nom::number::complete::le_u16(cursor)?;
+        let (_, reference_type) = NlistReferenceType::parse(cursor)?;
+
+        Ok((
+            bytes,
+            NlistDesc {
+                reference_type,
+                referenced_dynamically: n_desc & Self::REFERENCED_DYNAMICALLY_BITMASK != 0,
+                no_dead_strip: n_desc & Self::NO_DEAD_STRIP_BITMASK != 0,
+                n_weak_ref: n_desc & Self::N_WEAK_REF_BITMASK != 0,
+                n_weak_def: n_desc & Self::N_WEAK_DEF_BITMASK != 0,
+                library_ordinal: ((n_desc & Self::LIBRARY_ORDINAL_BITMASK) >> 8) as u8,
+            },
+        ))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NlistType {
+    pub stab: bool,
+    pub pext: bool,
+    pub type_: NlistTypeType,
+    pub ext: bool,
+}
+
+impl NlistType {
+    pub const NLIST_TYPE_STAB_BITMASK: u8 = 0xe0;
+    pub const NLIST_TYPE_PEXT_BITMASK: u8 = 0x10;
+    pub const NLIST_TYPE_EXT_BITMASK: u8 = 0x01;
+
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], NlistType> {
+        let cursor = bytes;
+        let (bytes, n_type) = nom::number::complete::le_u8(cursor)?;
+        let (_, type_) = NlistTypeType::parse(cursor)?;
+        Ok((
+            bytes,
+            NlistType {
+                stab: n_type & Self::NLIST_TYPE_STAB_BITMASK != 0,
+                pext: n_type & Self::NLIST_TYPE_PEXT_BITMASK != 0,
+                type_,
+                ext: n_type & Self::NLIST_TYPE_EXT_BITMASK != 0,
+            },
+        ))
+    }
+}
+
+#[derive(Debug)]
+pub struct Nlist64 {
+    pub n_strx: String,
+    pub n_type: NlistType,
+    pub n_sect: u8,
+    pub n_desc: NlistDesc,
+    pub n_value: u64,
+}
+
+impl Nlist64 {
+    pub fn parse<'a>(bytes: &'a [u8], strings: &[u8]) -> nom::IResult<&'a [u8], Self> {
+        let (cursor, n_strx) = nom::number::complete::le_u32(bytes)?;
+        let n_strx = LoadCommandBase::string_upto_null_terminator(&strings[n_strx as usize..])
+            .unwrap()
+            .1;
+        let (cursor, n_type) = NlistType::parse(cursor)?;
+        let (cursor, n_sect) = nom::number::complete::le_u8(cursor)?;
+        let (cursor, n_desc) = NlistDesc::parse(cursor)?;
+        let (cursor, n_value) = nom::number::complete::le_u64(cursor)?;
+
+        Ok((
+            cursor,
+            Nlist64 {
+                n_strx,
+                n_type,
+                n_sect,
+                n_desc,
+                n_value,
+            },
+        ))
+    }
+}
+
 #[derive(Debug)]
 pub struct SymtabCommand {
     pub cmd: LCLoadCommand,
@@ -737,6 +849,7 @@ pub struct SymtabCommand {
     pub nsyms: u32,
     pub stroff: u32,
     pub strsize: u32,
+    pub symbols: Vec<Nlist64>,
 }
 
 impl LoadCommand for SymtabCommand {
@@ -744,7 +857,7 @@ impl LoadCommand for SymtabCommand {
         bytes: &'a [u8],
         base: LoadCommandBase,
         _: MachHeader,
-        _: &'a [u8],
+        all: &'a [u8],
     ) -> nom::IResult<&'a [u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
@@ -752,6 +865,15 @@ impl LoadCommand for SymtabCommand {
         let (cursor, nsyms) = nom::number::complete::le_u32(cursor)?;
         let (cursor, stroff) = nom::number::complete::le_u32(cursor)?;
         let (_, strsize) = nom::number::complete::le_u32(cursor)?;
+
+        let string_pool = &all[stroff as usize..stroff as usize + strsize as usize];
+        let symbols = (0..nsyms)
+            .map(|i| {
+                let offset = symoff as usize + i as usize * 16;
+                let (_, symbol) = Nlist64::parse(&all[offset..], string_pool).unwrap();
+                symbol
+            })
+            .collect();
 
         Ok((
             end,
@@ -762,6 +884,7 @@ impl LoadCommand for SymtabCommand {
                 nsyms,
                 stroff,
                 strsize,
+                symbols,
             },
         ))
     }
