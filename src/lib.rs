@@ -1,3 +1,4 @@
+pub mod dyldinfo;
 pub mod fat;
 pub mod flags;
 pub mod header;

@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use crate::{
+    dyldinfo::{BindInstruction, RebaseInstruction},
     flags::{
         DylibUseFlags, LCLoadCommand, NlistReferenceType, NlistTypeType, Platform, Protection,
         SGFlags, SectionAttributes, SectionType, Tool,
@@ -38,7 +39,7 @@ impl LoadCommandBase {
         )
     }
 
-    fn string_upto_null_terminator(bytes: &[u8]) -> nom::IResult<&[u8], String> {
+    pub fn string_upto_null_terminator(bytes: &[u8]) -> nom::IResult<&[u8], String> {
         let (bytes, name_bytes) =
             match nom::bytes::complete::take_until::<&str, &[u8], nom::error::Error<&[u8]>>("\0")(
                 bytes,
@@ -1158,6 +1159,32 @@ pub fn read_uleb_many<'a>(mut bytes: &'a [u8]) -> nom::IResult<&'a [u8], Vec<u64
     Ok((bytes, result))
 }
 
+pub fn read_sleb(bytes: &[u8]) -> nom::IResult<&[u8], i64> {
+    let mut result = 0;
+    let mut shift = 0;
+    let mut cursor = bytes;
+    let mut byte;
+
+    loop {
+        let (remaining, current) = nom::number::complete::u8(cursor)?;
+        cursor = remaining;
+        byte = current;
+
+        result |= ((byte & 0x7f) as i64) << shift;
+        shift += 7;
+
+        if (byte & 0x80) == 0 {
+            break;
+        }
+    }
+
+    if shift < 8 * std::mem::size_of::<i64>() && (byte & 0x40) != 0 {
+        result |= -(1 << shift);
+    }
+
+    Ok((cursor, result))
+}
+
 #[derive(Debug)]
 pub struct FunctionOffset {
     pub offset: u64,
@@ -1399,6 +1426,11 @@ pub struct DyldInfoCommand {
     pub lazy_bind_size: u32,
     pub export_off: u32,
     pub export_size: u32,
+
+    pub rebase_instructions: Vec<RebaseInstruction>,
+    pub bind_instructions: Vec<BindInstruction>,
+    pub weak_instructions: Vec<BindInstruction>,
+    pub lazy_instructions: Vec<BindInstruction>,
 }
 
 impl LoadCommand for DyldInfoCommand {
@@ -1406,7 +1438,7 @@ impl LoadCommand for DyldInfoCommand {
         bytes: &'a [u8],
         base: LoadCommandBase,
         _: MachHeader,
-        _: &'a [u8],
+        all: &'a [u8],
     ) -> nom::IResult<&'a [u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
 
@@ -1421,6 +1453,21 @@ impl LoadCommand for DyldInfoCommand {
         let (cursor, lazy_bind_size) = nom::number::complete::le_u32(cursor)?;
         let (cursor, export_off) = nom::number::complete::le_u32(cursor)?;
         let (_, export_size) = nom::number::complete::le_u32(cursor)?;
+
+        let (_, rebase_instructions) = RebaseInstruction::parse(
+            &all[rebase_off as usize..(rebase_off + rebase_size) as usize],
+        )?;
+
+        let (_, bind_instructions) =
+            BindInstruction::parse(&all[bind_off as usize..(bind_off + bind_size) as usize])?;
+
+        let (_, weak_instructions) = BindInstruction::parse(
+            &all[weak_bind_off as usize..(weak_bind_off + weak_bind_size) as usize],
+        )?;
+
+        let (_, lazy_instructions) = BindInstruction::parse(
+            &all[lazy_bind_off as usize..(lazy_bind_off + lazy_bind_size) as usize],
+        )?;
 
         Ok((
             end,
@@ -1437,6 +1484,10 @@ impl LoadCommand for DyldInfoCommand {
                 lazy_bind_size,
                 export_off,
                 export_size,
+                rebase_instructions,
+                bind_instructions,
+                weak_instructions,
+                lazy_instructions,
             },
         ))
     }

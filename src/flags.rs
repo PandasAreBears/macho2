@@ -383,6 +383,10 @@ impl FatMagic {
 pub enum NlistTypeType {
     Undefined = 0x0,
     Absolute = 0x2,
+    // example: /usr/bin/lipo arm64 slice
+    Unknown1 = 0x4,
+    // example: /usr/bin/lipo arm64 slice
+    Unknown2 = 0x6,
     Section = 0xe,
     PreboundUndefined = 0xc,
     Indirect = 0xa,
