@@ -213,6 +213,7 @@ impl BindInstruction {
         let mut symbol_name = String::new();
         let mut dylib_ordinal: u8 = 0;
         let mut addend = 0;
+        #[allow(unused_variables, unused_mut)] // TODO: Do something with this?
         let mut symbol_flag = BindSymbolFlags::NonWeakDefinition;
         let mut cursor = bytes;
         loop {
@@ -235,7 +236,7 @@ impl BindInstruction {
                     dylib_ordinal = immediate;
                 }
                 BindOpcode::SetSymbolTrailingFlagsImm => {
-                    symbol_flag = num::FromPrimitive::from_u8(immediate).unwrap();
+                    // symbol_flag = num::FromPrimitive::from_u8(immediate).unwrap(); // TODO: Do something with this?
                     let (next, str) = LoadCommandBase::string_upto_null_terminator(cursor).unwrap();
                     cursor = next;
                     symbol_name = str;
