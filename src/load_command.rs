@@ -809,7 +809,7 @@ impl NlistType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Nlist64 {
     pub n_strx: String,
     pub n_type: NlistType,
@@ -842,7 +842,7 @@ impl Nlist64 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SymtabCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -913,14 +913,23 @@ pub struct DysymtabCommand {
     pub nextrel: u32,
     pub locreloff: u32,
     pub nlocrel: u32,
+
+    pub locals: Vec<Nlist64>,
+    pub extdefs: Vec<Nlist64>,
+    pub undefs: Vec<Nlist64>,
+    pub indirect: Vec<Nlist64>,
 }
 
-impl LoadCommand for DysymtabCommand {
-    fn parse<'a>(
+impl DysymtabCommand {
+    pub const INDIRECT_SYMBOL_LOCAL: u32 = 0x80000000;
+    pub const INDIRECT_SYMBOL_ABS: u32 = 0x40000000;
+
+    pub fn parse<'a>(
         bytes: &'a [u8],
         base: LoadCommandBase,
         _: MachHeader,
-        _: &'a [u8],
+        all: &'a [u8],
+        symtab: SymtabCommand,
     ) -> nom::IResult<&'a [u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
@@ -942,6 +951,47 @@ impl LoadCommand for DysymtabCommand {
         let (cursor, nextrel) = nom::number::complete::le_u32(cursor)?;
         let (cursor, locreloff) = nom::number::complete::le_u32(cursor)?;
         let (_, nlocrel) = nom::number::complete::le_u32(cursor)?;
+
+        let locals = symtab.symbols[ilocalsym as usize..(ilocalsym + nlocalsym) as usize]
+            .iter()
+            .cloned()
+            .collect();
+
+        let extdefs = symtab.symbols[iextdefsym as usize..(iextdefsym + nextdefsym) as usize]
+            .iter()
+            .cloned()
+            .collect();
+
+        let undefs = symtab.symbols[iundefsym as usize..(iundefsym + nundefsym) as usize]
+            .iter()
+            .cloned()
+            .collect();
+
+        let indirect_bytes =
+            &all[indirectsymoff as usize..indirectsymoff as usize + nindirectsyms as usize * 4];
+        let indirect = {
+            let mut indices = Vec::new();
+            let mut cursor = indirect_bytes;
+            while !cursor.is_empty() {
+                let (remaining, index) = nom::number::complete::le_u32(cursor)?;
+                cursor = remaining;
+                if index == Self::INDIRECT_SYMBOL_LOCAL {
+                    println!("Local symbol");
+                    // TODO: Do something with this
+                    continue;
+                }
+                if index == Self::INDIRECT_SYMBOL_ABS {
+                    println!("Absolute symbol");
+                    // TODO: Do something with this
+                    continue;
+                }
+                indices.push(index);
+            }
+            indices
+                .iter()
+                .map(|&i| symtab.symbols[i as usize].clone())
+                .collect()
+        };
 
         Ok((
             end,
@@ -966,6 +1016,10 @@ impl LoadCommand for DysymtabCommand {
                 nextrel,
                 locreloff,
                 nlocrel,
+                locals,
+                extdefs,
+                undefs,
+                indirect,
             },
         ))
     }

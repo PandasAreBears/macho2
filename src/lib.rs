@@ -79,6 +79,7 @@ impl LoadCommand {
         bytes: &'a [u8],
         header: MachHeader,
         all: &'a [u8],
+        symtab: Option<SymtabCommand>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (bytes, base) = load_command::LoadCommandBase::parse(bytes)?;
 
@@ -127,7 +128,8 @@ impl LoadCommand {
                 }
             }
             LCLoadCommand::LcDysymtab => {
-                let (bytes, cmd) = DysymtabCommand::parse(bytes, base, header, all)?;
+                let (bytes, cmd) =
+                    DysymtabCommand::parse(bytes, base, header, all, symtab.unwrap())?;
                 Ok((bytes, LoadCommand::Dysymtab(cmd)))
             }
             LCLoadCommand::LcLoadDylinker
@@ -304,8 +306,16 @@ impl MachO {
     pub fn parse(bytes: &[u8]) -> Result<Self, nom::Err<nom::error::Error<&[u8]>>> {
         let (mut cursor, header) = MachHeader::parse(bytes)?;
         let mut cmds = Vec::new();
+        let mut symtab_cmd = None;
         for _ in 0..header.ncmds() {
-            let (next, cmd) = LoadCommand::parse(cursor, header, bytes).unwrap();
+            let (next, cmd) =
+                LoadCommand::parse(cursor, header, bytes, symtab_cmd.clone()).unwrap();
+
+            // The DysymtabCommand depends on the SymtabCommand, so we have to do this here.
+            if let LoadCommand::Symtab(symtab) = &cmd {
+                symtab_cmd = Some(symtab.clone());
+            }
+
             cmds.push(cmd);
             cursor = next;
         }
