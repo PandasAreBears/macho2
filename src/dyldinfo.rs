@@ -14,7 +14,7 @@ pub enum RebaseType {
 #[derive(Debug, FromPrimitive, Clone, Copy)]
 pub enum RebaseOpcode {
     Done = 0,
-    SetType = 1,
+    SetTypeImm = 1,
     SetSegmentAndOffsetUleb = 2,
     AddAddressUleb = 3,
     AddAddressImmScaled = 4,
@@ -29,8 +29,8 @@ impl RebaseOpcode {
     pub const REBASE_IMMEDIATE_MASK: u8 = 0x0F;
 
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], (RebaseOpcode, u8)> {
-        let (bytes, opcode) = nom::number::complete::be_u8(bytes)?;
-        match num::FromPrimitive::from_u8(opcode & Self::REBASE_OPCODE_MASK >> 4) {
+        let (bytes, opcode) = nom::number::complete::le_u8(bytes)?;
+        match num::FromPrimitive::from_u8((opcode & Self::REBASE_OPCODE_MASK) >> 4) {
             Some(opc) => Ok((bytes, (opc, (opcode & Self::REBASE_IMMEDIATE_MASK)))),
             None => Err(nom::Err::Failure(nom::error::Error::new(
                 bytes,
@@ -61,22 +61,22 @@ impl RebaseInstruction {
                 RebaseOpcode::Done => {
                     return Ok((cursor, instructions));
                 }
-                RebaseOpcode::SetType => {
+                RebaseOpcode::SetTypeImm => {
                     type_ = num::FromPrimitive::from_u8(immediate).unwrap();
                 }
                 RebaseOpcode::SetSegmentAndOffsetUleb => {
-                    let (next, num) = read_uleb(cursor)?;
+                    let (next, num) = read_uleb(&cursor)?;
                     cursor = next;
                     ordinal = immediate;
                     offset = num;
                 }
                 RebaseOpcode::AddAddressUleb => {
-                    let (next, num) = read_uleb(cursor)?;
+                    let (next, num) = read_uleb(&cursor)?;
                     cursor = next;
-                    offset += num;
+                    offset = offset.wrapping_add(num);
                 }
                 RebaseOpcode::AddAddressImmScaled => {
-                    offset += (immediate * 8) as u64;
+                    offset = offset.wrapping_add((immediate * 8) as u64);
                 }
                 RebaseOpcode::DoRebaseImmTimes => {
                     for _ in 0..immediate {
@@ -85,11 +85,11 @@ impl RebaseInstruction {
                             segment_offset: offset,
                             rebase_type: type_,
                         });
-                        offset += 8;
+                        offset = offset.wrapping_add(8);
                     }
                 }
                 RebaseOpcode::DoRebaseUlebTimes => {
-                    let (next, num) = read_uleb(cursor)?;
+                    let (next, num) = read_uleb(&cursor)?;
                     cursor = next;
                     for _ in 0..num {
                         instructions.push(RebaseInstruction {
@@ -97,7 +97,7 @@ impl RebaseInstruction {
                             segment_offset: offset,
                             rebase_type: type_,
                         });
-                        offset += 8;
+                        offset = offset.wrapping_add(8);
                     }
                 }
                 RebaseOpcode::DoRebaseAddAddressUleb => {
@@ -106,12 +106,12 @@ impl RebaseInstruction {
                         segment_offset: offset,
                         rebase_type: type_,
                     });
-                    let (next, num) = read_uleb(bytes)?;
+                    let (next, num) = read_uleb(&cursor)?;
                     cursor = next;
-                    offset += num + 8;
+                    offset = offset.wrapping_add(num + 8);
                 }
                 RebaseOpcode::DoRebaseUlebTimesSkippingUleb => {
-                    let (next, num) = read_uleb(cursor)?;
+                    let (next, num) = read_uleb(&cursor)?;
                     let (next, skip) = read_uleb(next)?;
                     cursor = next;
                     for _ in 0..num {
@@ -120,7 +120,7 @@ impl RebaseInstruction {
                             segment_offset: offset,
                             rebase_type: type_,
                         });
-                        offset += skip + 8;
+                        offset = offset.wrapping_add(skip + 8);
                     }
                 }
             }
@@ -258,7 +258,8 @@ impl BindInstruction {
                 BindOpcode::AddAddressUleb => {
                     let (next, num) = read_uleb(cursor)?;
                     cursor = next;
-                    offset += num;
+                    // They use u64 overflows to reset the offset to a lower value.
+                    offset = offset.wrapping_add(num);
                 }
                 BindOpcode::DoBind => {
                     instructions.push(BindInstruction {
@@ -269,7 +270,7 @@ impl BindInstruction {
                         symbol_name: symbol_name.clone(),
                         addend,
                     });
-                    offset += 8;
+                    offset = offset.wrapping_add(8);
                 }
                 BindOpcode::DoBindAddAddressUleb => {
                     instructions.push(BindInstruction {
@@ -282,7 +283,7 @@ impl BindInstruction {
                     });
                     let (next, num) = read_uleb(cursor)?;
                     cursor = next;
-                    offset += num + 8;
+                    offset = offset.wrapping_add(num + 8);
                 }
                 BindOpcode::DoBindAddAddressImmScaled => {
                     instructions.push(BindInstruction {
@@ -293,7 +294,7 @@ impl BindInstruction {
                         symbol_name: symbol_name.clone(),
                         addend,
                     });
-                    offset += (immediate * 8) as u64 + 8;
+                    offset += offset.wrapping_add((immediate * 8) as u64 + 8);
                 }
                 BindOpcode::DoBindUlebTimesSkippingUleb => {
                     let (next, num) = read_uleb(cursor)?;
@@ -308,7 +309,7 @@ impl BindInstruction {
                             symbol_name: symbol_name.clone(),
                             addend,
                         });
-                        offset += skip + 8;
+                        offset += offset.wrapping_add(skip + 8);
                     }
                 }
                 BindOpcode::Threaded => {
@@ -329,7 +330,7 @@ impl BindInstruction {
                                 symbol_name: symbol_name.clone(),
                                 addend,
                             });
-                            offset += 8;
+                            offset = offset.wrapping_add(8);
                         }
                     }
                 }
