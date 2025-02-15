@@ -1,3 +1,4 @@
+pub mod codesign;
 pub mod dyldinfo;
 pub mod fat;
 pub mod flags;
@@ -5,6 +6,7 @@ pub mod header;
 pub mod load_command;
 pub mod machine;
 
+use codesign::CodeSignCommand;
 use fat::{FatArch, FatHeader};
 use flags::{FatMagic, LCLoadCommand, MHMagic};
 use header::MachHeader;
@@ -45,7 +47,7 @@ pub enum LoadCommand {
     Routines64(RoutinesCommand64),
     UUID(UuidCommand),
     Rpath(RpathCommand),
-    CodeSignature(LinkeditDataCommand),
+    CodeSignature(CodeSignCommand),
     SegmentSplitInfo(LinkeditDataCommand),
     ReexportDylib(DylibCommand),
     LazyLoadDylib(DylibCommand),
@@ -193,8 +195,11 @@ impl LoadCommand {
                 let (bytes, cmd) = FunctionStartsCommand::parse(bytes, base, header, all)?;
                 Ok((bytes, LoadCommand::FunctionStarts(cmd)))
             }
-            LCLoadCommand::LcCodeSignature
-            | LCLoadCommand::LcSegmentSplitInfo
+            LCLoadCommand::LcCodeSignature => {
+                let (bytes, cmd) = CodeSignCommand::parse(bytes, base, header, all)?;
+                Ok((bytes, LoadCommand::CodeSignature(cmd)))
+            }
+            LCLoadCommand::LcSegmentSplitInfo
             | LCLoadCommand::LcDataInCode
             | LCLoadCommand::LcDylibCodeSignDrs
             | LCLoadCommand::LcLinkerOptimizationHint
@@ -203,7 +208,6 @@ impl LoadCommand {
             | LCLoadCommand::LcAtomInfo => {
                 let (bytes, cmd) = LinkeditDataCommand::parse(bytes, base, header, all)?;
                 match base.cmd {
-                    LCLoadCommand::LcCodeSignature => Ok((bytes, LoadCommand::CodeSignature(cmd))),
                     LCLoadCommand::LcSegmentSplitInfo => {
                         Ok((bytes, LoadCommand::SegmentSplitInfo(cmd)))
                     }

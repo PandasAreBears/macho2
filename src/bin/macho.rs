@@ -57,5 +57,15 @@ fn main() {
     };
 
     println!("{:#?}", macho.header);
-    println!("{:#?}", macho.load_commands);
+
+    macho
+        .load_commands
+        .iter()
+        .filter(|lc| match lc {
+            macho2::LoadCommand::CodeSignature(_) => true,
+            _ => false,
+        })
+        .for_each(|f| {
+            println!("{:#?}", f);
+        });
 }
