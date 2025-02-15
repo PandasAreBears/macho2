@@ -1,5 +1,7 @@
+use core::hash;
+
 use bitflags;
-use nom;
+use nom::{self, Parser};
 use num_derive::FromPrimitive;
 
 use crate::{
@@ -147,8 +149,9 @@ impl CodeSignTypeIndex {
     }
 }
 
-#[derive(Debug, FromPrimitive)]
+#[derive(Debug, FromPrimitive, Clone, Copy)]
 pub enum CodeSignHashType {
+    Default = 0,
     SHA1 = 1,
     SHA256 = 2,
     SHA256Truncated = 3,
@@ -157,8 +160,8 @@ pub enum CodeSignHashType {
 
 impl CodeSignHashType {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignHashType> {
-        let (bytes, hash_type) = nom::number::complete::be_u32(bytes)?;
-        match num::FromPrimitive::from_u32(hash_type) {
+        let (bytes, hash_type) = nom::number::complete::be_u8(bytes)?;
+        match num::FromPrimitive::from_u8(hash_type) {
             Some(hash_type) => Ok((bytes, hash_type)),
             None => Err(nom::Err::Failure(nom::error::Error::new(
                 bytes,
@@ -306,9 +309,133 @@ impl CodeSignSuperBlob {
 }
 
 #[derive(Debug)]
+pub enum CodeSignHash {
+    SHA1([u8; 20]),
+    SHA256([u8; 32]),
+    SHA256Truncated([u8; 20]),
+    SHA384([u8; 48]),
+}
+
+impl CodeSignHash {
+    pub fn parse(bytes: &[u8], hash_type: CodeSignHashType) -> nom::IResult<&[u8], CodeSignHash> {
+        match hash_type {
+            CodeSignHashType::SHA1 => {
+                let (bytes, hash) =
+                    nom::multi::count(nom::number::complete::be_u8, 20).parse(bytes)?;
+                Ok((bytes, CodeSignHash::SHA1(hash.try_into().unwrap())))
+            }
+            CodeSignHashType::SHA256 => {
+                let (bytes, hash) =
+                    nom::multi::count(nom::number::complete::be_u8, 32).parse(bytes)?;
+                Ok((bytes, CodeSignHash::SHA256(hash.try_into().unwrap())))
+            }
+            CodeSignHashType::SHA256Truncated => {
+                let (bytes, hash) =
+                    nom::multi::count(nom::number::complete::be_u8, 20).parse(bytes)?;
+                Ok((
+                    bytes,
+                    CodeSignHash::SHA256Truncated(hash.try_into().unwrap()),
+                ))
+            }
+            CodeSignHashType::SHA384 => {
+                let (bytes, hash) =
+                    nom::multi::count(nom::number::complete::be_u8, 48).parse(bytes)?;
+                Ok((bytes, CodeSignHash::SHA384(hash.try_into().unwrap())))
+            }
+            _ => unimplemented!(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct CodeSignCodeDirectory {
+    pub magic: CodeSignMagic,
+    pub length: u32,
+    pub version: CodeSignSupports,
+    pub flags: CodeSignAttrs,
+    pub hash_offset: u32,
+    pub ident_offset: u32,
+    pub n_special_slots: u32,
+    pub n_code_slots: u32,
+    pub code_limit: u32,
+    pub hash_size: u8,
+    pub hash_type: CodeSignHashType,
+    pub platform: u8, // TODO: enum this
+    pub page_size: u8,
+    pub spare2: u32,
+
+    pub hashes: Vec<(i32, CodeSignHash)>,
+    pub identifier: String,
+}
+
+impl CodeSignCodeDirectory {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignCodeDirectory> {
+        let cursor = bytes;
+        let (cursor, magic) = CodeSignMagic::parse(cursor)?;
+        let (cursor, length) = nom::number::complete::be_u32(cursor)?;
+        let (cursor, version) = CodeSignSupports::parse(cursor)?;
+        let (cursor, flags) = nom::number::complete::be_u32(cursor)?;
+        let flags = CodeSignAttrs::from_bits_truncate(flags);
+        let (cursor, hash_offset) = nom::number::complete::be_u32(cursor)?;
+        let (cursor, ident_offset) = nom::number::complete::be_u32(cursor)?;
+
+        let (cursor, n_special_slots) = nom::number::complete::be_u32(cursor)?;
+        let (cursor, n_code_slots) = nom::number::complete::be_u32(cursor)?;
+        let (cursor, code_limit) = nom::number::complete::be_u32(cursor)?;
+        let (cursor, hash_size) = nom::number::complete::be_u8(cursor)?;
+        let (cursor, hash_type) = CodeSignHashType::parse(cursor)?;
+        let (cursor, platform) = nom::number::complete::be_u8(cursor)?;
+        let (cursor, page_size) = nom::number::complete::be_u8(cursor)?;
+        let (_, spare2) = nom::number::complete::be_u32(cursor)?;
+
+        let hashes = (-(n_special_slots as i32)..n_code_slots as i32)
+            .map(|i| {
+                let begin = hash_offset + (i as u32 * hash_size as u32);
+                let hash_data = &bytes[begin as usize..];
+                let (_, hash) = CodeSignHash::parse(hash_data, hash_type).unwrap();
+                (i, hash)
+            })
+            .collect();
+
+        let identifier =
+            LoadCommandBase::string_upto_null_terminator(&bytes[ident_offset as usize..])
+                .unwrap()
+                .1
+                .to_string();
+
+        Ok((
+            bytes,
+            CodeSignCodeDirectory {
+                magic,
+                length,
+                version,
+                flags,
+                hash_offset,
+                ident_offset,
+                n_special_slots,
+                n_code_slots,
+                code_limit,
+                hash_size,
+                hash_type,
+                platform,
+                page_size,
+                spare2,
+                hashes,
+                identifier,
+            },
+        ))
+    }
+}
+
+#[derive(Debug)]
+pub enum CodeSignBlob {
+    CodeDirectory(CodeSignCodeDirectory),
+}
+
+#[derive(Debug)]
 pub struct CodeSignCommand {
     pub cmd: LinkeditDataCommand,
-    pub blobs: CodeSignSuperBlob,
+    pub blobs: Vec<CodeSignBlob>,
 }
 
 impl LoadCommand for CodeSignCommand {
@@ -321,6 +448,21 @@ impl LoadCommand for CodeSignCommand {
         let (bytes, cmd) = LinkeditDataCommand::parse(bytes, base, header, all)?;
         let cs = &all[cmd.dataoff as usize..cmd.dataoff as usize + cmd.datasize as usize];
         let (_, blobs) = CodeSignSuperBlob::parse(cs)?;
+
+        let blobs = blobs
+            .blobs
+            .iter()
+            .map(|blob| {
+                let blob_data = &cs[blob.offset as usize..];
+                match blob.type_ {
+                    CodeSignSlot::CodeDirectory => {
+                        let (_, code_directory) = CodeSignCodeDirectory::parse(blob_data).unwrap();
+                        CodeSignBlob::CodeDirectory(code_directory)
+                    }
+                    _ => unimplemented!(),
+                }
+            })
+            .collect();
 
         Ok((bytes, CodeSignCommand { cmd, blobs }))
     }
