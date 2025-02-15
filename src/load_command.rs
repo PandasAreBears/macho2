@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::{
-    dyldinfo::{BindInstruction, RebaseInstruction},
+    dyldinfo::{BindInstruction, DyldExport, RebaseInstruction},
     flags::{
         DylibUseFlags, LCLoadCommand, NlistReferenceType, NlistTypeType, Platform, Protection,
         SGFlags, SectionAttributes, SectionType, Tool,
@@ -1485,6 +1485,7 @@ pub struct DyldInfoCommand {
     pub bind_instructions: Vec<BindInstruction>,
     pub weak_instructions: Vec<BindInstruction>,
     pub lazy_instructions: Vec<BindInstruction>,
+    pub exports: Vec<DyldExport>,
 }
 
 impl LoadCommand for DyldInfoCommand {
@@ -1523,6 +1524,9 @@ impl LoadCommand for DyldInfoCommand {
             &all[lazy_bind_off as usize..(lazy_bind_off + lazy_bind_size) as usize],
         )?;
 
+        let (_, exports) =
+            DyldExport::parse(&all[export_off as usize..(export_off + export_size) as usize])?;
+
         Ok((
             end,
             DyldInfoCommand {
@@ -1542,6 +1546,7 @@ impl LoadCommand for DyldInfoCommand {
                 bind_instructions,
                 weak_instructions,
                 lazy_instructions,
+                exports,
             },
         ))
     }
