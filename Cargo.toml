@@ -9,6 +9,7 @@ edition = "2021"
 
 [dependencies]
 bitflags = "2.8.0"
+cryptographic-message-syntax = "0.27.0"
 nom = "8.0.0"
 num = "0.4.3"
 num-derive = "0.4.2"

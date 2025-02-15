@@ -1,6 +1,5 @@
-use core::hash;
-
 use bitflags;
+use cryptographic_message_syntax::SignedData;
 use nom::{self, Parser};
 use num_derive::FromPrimitive;
 
@@ -277,6 +276,21 @@ impl CodeSignBlobIndex {
 }
 
 #[derive(Debug)]
+pub struct CodeSignGenericBlob {
+    pub magic: CodeSignMagic,
+    pub length: u32,
+}
+
+impl CodeSignGenericBlob {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignGenericBlob> {
+        let (bytes, magic) = CodeSignMagic::parse(bytes)?;
+        let (bytes, length) = nom::number::complete::be_u32(bytes)?;
+
+        Ok((bytes, CodeSignGenericBlob { magic, length }))
+    }
+}
+
+#[derive(Debug)]
 pub struct CodeSignSuperBlob {
     pub magic: CodeSignMagic,
     pub length: u32,
@@ -349,8 +363,7 @@ impl CodeSignHash {
 
 #[derive(Debug)]
 pub struct CodeSignCodeDirectory {
-    pub magic: CodeSignMagic,
-    pub length: u32,
+    pub generic: CodeSignGenericBlob,
     pub version: CodeSignSupports,
     pub flags: CodeSignAttrs,
     pub hash_offset: u32,
@@ -371,8 +384,7 @@ pub struct CodeSignCodeDirectory {
 impl CodeSignCodeDirectory {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignCodeDirectory> {
         let cursor = bytes;
-        let (cursor, magic) = CodeSignMagic::parse(cursor)?;
-        let (cursor, length) = nom::number::complete::be_u32(cursor)?;
+        let (cursor, generic) = CodeSignGenericBlob::parse(cursor)?;
         let (cursor, version) = CodeSignSupports::parse(cursor)?;
         let (cursor, flags) = nom::number::complete::be_u32(cursor)?;
         let flags = CodeSignAttrs::from_bits_truncate(flags);
@@ -406,8 +418,7 @@ impl CodeSignCodeDirectory {
         Ok((
             bytes,
             CodeSignCodeDirectory {
-                magic,
-                length,
+                generic,
                 version,
                 flags,
                 hash_offset,
@@ -435,19 +446,22 @@ pub struct CodeSignRequirements {
 
 #[derive(Debug)]
 pub struct CodeSignEntitlements {
-    pub magic: CodeSignMagic,
+    pub generic: CodeSignGenericBlob,
     pub entitlements: String,
 }
 
 impl CodeSignEntitlements {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignEntitlements> {
-        let (bytes, magic) = CodeSignMagic::parse(bytes)?;
-        let (_, entitlements) = LoadCommandBase::string_upto_null_terminator(bytes)?;
+        let (bytes, generic) = CodeSignGenericBlob::parse(bytes)?;
+        let mut entitlements =
+            unsafe { String::from_utf8_unchecked(bytes[..generic.length as usize].to_vec()) };
+        entitlements.push('\n');
+
         Ok((
             bytes,
             CodeSignEntitlements {
-                magic,
-                entitlements: entitlements.to_string(),
+                generic,
+                entitlements,
             },
         ))
     }
@@ -461,8 +475,18 @@ pub struct CodeSignDerEntitlements {
 
 #[derive(Debug)]
 pub struct CodeSignSignature {
-    // TODO: implement
-    pub data: Vec<u8>,
+    pub generic: CodeSignGenericBlob,
+    pub cms: SignedData,
+}
+impl CodeSignSignature {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignSignature> {
+        let (bytes, generic) = CodeSignGenericBlob::parse(bytes)?;
+        // Apple uses indefinite field lengths from the BER spec to encode some fields here. The
+        // CMS crate doesn't support this encoding type but cryptographic-message-syntax does.
+        let cms = SignedData::parse_ber(&bytes[..generic.length as usize]).unwrap();
+
+        Ok((bytes, CodeSignSignature { generic, cms }))
+    }
 }
 
 #[derive(Debug)]
@@ -515,9 +539,10 @@ impl LoadCommand for CodeSignCommand {
                             data: blob_data.to_vec(),
                         })
                     }
-                    CodeSignSlot::SignatureSlot => CodeSignBlob::SignatureSlot(CodeSignSignature {
-                        data: blob_data.to_vec(),
-                    }),
+                    CodeSignSlot::SignatureSlot => {
+                        let (_, signature) = CodeSignSignature::parse(blob_data).unwrap();
+                        CodeSignBlob::SignatureSlot(signature)
+                    }
                     _ => unimplemented!(),
                 }
             })
