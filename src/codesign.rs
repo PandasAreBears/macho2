@@ -453,9 +453,8 @@ pub struct CodeSignEntitlements {
 impl CodeSignEntitlements {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignEntitlements> {
         let (bytes, generic) = CodeSignGenericBlob::parse(bytes)?;
-        let mut entitlements =
-            unsafe { String::from_utf8_unchecked(bytes[..generic.length as usize].to_vec()) };
-        entitlements.push('\n');
+        let entitlements =
+            String::from_utf8(bytes[..generic.length as usize - 8 as usize].to_vec()).unwrap();
 
         Ok((
             bytes,
