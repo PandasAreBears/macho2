@@ -391,7 +391,7 @@ impl CodeSignCodeDirectory {
         let hashes = (-(n_special_slots as i32)..n_code_slots as i32)
             .map(|i| {
                 let begin = hash_offset as i32 + (i * hash_size as i32) as i32;
-                let hash_data = &bytes[(hash_offset as i32 + begin) as usize..];
+                let hash_data = &bytes[begin as usize..];
                 let (_, hash) = CodeSignHash::parse(hash_data, hash_type).unwrap();
                 (i, hash)
             })
