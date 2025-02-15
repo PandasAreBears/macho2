@@ -390,8 +390,8 @@ impl CodeSignCodeDirectory {
 
         let hashes = (-(n_special_slots as i32)..n_code_slots as i32)
             .map(|i| {
-                let begin = hash_offset + (i as u32 * hash_size as u32);
-                let hash_data = &bytes[begin as usize..];
+                let begin = hash_offset as i32 + (i * hash_size as i32) as i32;
+                let hash_data = &bytes[(hash_offset as i32 + begin) as usize..];
                 let (_, hash) = CodeSignHash::parse(hash_data, hash_type).unwrap();
                 (i, hash)
             })
@@ -428,8 +428,50 @@ impl CodeSignCodeDirectory {
 }
 
 #[derive(Debug)]
+pub struct CodeSignRequirements {
+    // TODO: implement
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct CodeSignEntitlements {
+    pub magic: CodeSignMagic,
+    pub entitlements: String,
+}
+
+impl CodeSignEntitlements {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignEntitlements> {
+        let (bytes, magic) = CodeSignMagic::parse(bytes)?;
+        let (_, entitlements) = LoadCommandBase::string_upto_null_terminator(bytes)?;
+        Ok((
+            bytes,
+            CodeSignEntitlements {
+                magic,
+                entitlements: entitlements.to_string(),
+            },
+        ))
+    }
+}
+
+#[derive(Debug)]
+pub struct CodeSignDerEntitlements {
+    // TODO: implement
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct CodeSignSignature {
+    // TODO: implement
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug)]
 pub enum CodeSignBlob {
     CodeDirectory(CodeSignCodeDirectory),
+    Requirements(CodeSignRequirements),
+    Entitlements(CodeSignEntitlements),
+    DerEntitlements(CodeSignDerEntitlements),
+    SignatureSlot(CodeSignSignature),
 }
 
 #[derive(Debug)]
@@ -459,6 +501,23 @@ impl LoadCommand for CodeSignCommand {
                         let (_, code_directory) = CodeSignCodeDirectory::parse(blob_data).unwrap();
                         CodeSignBlob::CodeDirectory(code_directory)
                     }
+                    CodeSignSlot::Requirements => {
+                        CodeSignBlob::Requirements(CodeSignRequirements {
+                            data: blob_data.to_vec(),
+                        })
+                    }
+                    CodeSignSlot::Entitlements => {
+                        let (_, entitlements) = CodeSignEntitlements::parse(blob_data).unwrap();
+                        CodeSignBlob::Entitlements(entitlements)
+                    }
+                    CodeSignSlot::DerEntitlements => {
+                        CodeSignBlob::DerEntitlements(CodeSignDerEntitlements {
+                            data: blob_data.to_vec(),
+                        })
+                    }
+                    CodeSignSlot::SignatureSlot => CodeSignBlob::SignatureSlot(CodeSignSignature {
+                        data: blob_data.to_vec(),
+                    }),
                     _ => unimplemented!(),
                 }
             })
