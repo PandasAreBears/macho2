@@ -1,9 +1,12 @@
 #![allow(dead_code)]
 
-use nom::error::Error;
+use nom::{error::Error, Parser};
 use num_derive::FromPrimitive;
 
-use crate::load_command::{read_sleb, read_uleb, LoadCommandBase};
+use crate::{
+    header::MachHeader,
+    load_command::{read_sleb, read_uleb, LinkeditDataCommand, LoadCommand, LoadCommandBase},
+};
 
 #[derive(Debug, FromPrimitive, Clone, Copy)]
 pub enum RebaseType {
@@ -423,5 +426,153 @@ impl DyldExport {
                 exports,
             );
         }
+    }
+}
+
+#[derive(Debug, FromPrimitive)]
+pub enum DyldSymbolsFormat {
+    Uncompressed = 0,
+    Zlib = 1,
+}
+
+impl DyldSymbolsFormat {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldSymbolsFormat> {
+        let (bytes, value) = nom::number::complete::le_u32(bytes)?;
+        match num::FromPrimitive::from_u32(value) {
+            Some(format) => Ok((bytes, format)),
+            None => Err(nom::Err::Failure(nom::error::Error::new(
+                bytes,
+                nom::error::ErrorKind::Tag,
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, FromPrimitive)]
+pub enum DyldImportFormat {
+    Import = 1,
+    ImportAddend = 2,
+    ImportAddend64 = 3,
+}
+
+impl DyldImportFormat {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldImportFormat> {
+        let (bytes, value) = nom::number::complete::le_u32(bytes)?;
+        match num::FromPrimitive::from_u32(value) {
+            Some(format) => Ok((bytes, format)),
+            None => Err(nom::Err::Failure(nom::error::Error::new(
+                bytes,
+                nom::error::ErrorKind::Tag,
+            ))),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct DyldChainedImport {
+    ordinal: u8,
+    is_weak: bool,
+    name: String,
+}
+
+impl DyldChainedImport {
+    pub const ORDINAL_MASK: u32 = 0xFF000000;
+    pub const WEAK_IMPORT_MASK: u32 = 0x00800000;
+    pub const NAME_OFFSET_MASK: u32 = 0x007FFFFF;
+
+    pub fn parse<'a>(bytes: &'a [u8], symbols: &[u8]) -> nom::IResult<&'a [u8], DyldChainedImport> {
+        let (bytes, value) = nom::number::complete::be_u32(bytes)?;
+        let ordinal = ((value & Self::ORDINAL_MASK) >> 24) as u8;
+        let is_weak = (value & Self::WEAK_IMPORT_MASK) != 0;
+        //                v- 1st bit         v- 16th bit
+        // 00000000 00000000 00000000 00000000
+        //                          ^- 8th bit
+        let name_offset = (((value & 0xFE0000) >> 17)
+            + ((value & 0xFF00) >> 1)
+            + ((value & 0xFF) << 15)) as usize;
+
+        let name = LoadCommandBase::string_upto_null_terminator(&symbols[name_offset as usize..])
+            .unwrap()
+            .1;
+
+        Ok((
+            bytes,
+            DyldChainedImport {
+                ordinal,
+                is_weak,
+                name,
+            },
+        ))
+    }
+}
+
+#[derive(Debug)]
+pub struct DyldChainedFixupsHeader {
+    pub fixups_version: u32,
+    pub starts_offset: u32,
+    pub imports_offset: u32,
+    pub symbols_offset: u32,
+    pub imports_count: u32,
+    pub imports_format: DyldImportFormat,
+    pub symbols_format: DyldSymbolsFormat,
+}
+
+impl DyldChainedFixupsHeader {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldChainedFixupsHeader> {
+        let (bytes, fixups_version) = nom::number::complete::le_u32(bytes)?;
+        let (bytes, starts_offset) = nom::number::complete::le_u32(bytes)?;
+        let (bytes, imports_offset) = nom::number::complete::le_u32(bytes)?;
+        let (bytes, symbols_offset) = nom::number::complete::le_u32(bytes)?;
+        let (bytes, imports_count) = nom::number::complete::le_u32(bytes)?;
+        let (bytes, imports_format) = DyldImportFormat::parse(bytes)?;
+        let (bytes, symbols_format) = DyldSymbolsFormat::parse(bytes)?;
+
+        Ok((
+            bytes,
+            DyldChainedFixupsHeader {
+                fixups_version,
+                starts_offset,
+                imports_offset,
+                symbols_offset,
+                imports_count,
+                imports_format,
+                symbols_format,
+            },
+        ))
+    }
+}
+
+#[derive(Debug)]
+pub struct DyldChainedFixupCommand {
+    pub cmd: LinkeditDataCommand,
+    pub header: DyldChainedFixupsHeader,
+    pub imports: Vec<DyldChainedImport>,
+}
+
+impl LoadCommand for DyldChainedFixupCommand {
+    fn parse<'a>(
+        bytes: &'a [u8],
+        base: LoadCommandBase,
+        header: MachHeader,
+        all: &'a [u8],
+    ) -> nom::IResult<&'a [u8], DyldChainedFixupCommand> {
+        let (bytes, cmd) = LinkeditDataCommand::parse(bytes, base, header, all)?;
+        let blob = &all[cmd.dataoff as usize..cmd.dataoff as usize + cmd.datasize as usize];
+        let (_, header) = DyldChainedFixupsHeader::parse(blob)?;
+        println!("{:?}", &blob[header.imports_offset as usize..]);
+        let (_, imports) = nom::multi::count(
+            |cursor| DyldChainedImport::parse(cursor, &blob[header.symbols_offset as usize..]),
+            header.imports_count as usize,
+        )
+        .parse(&blob[header.imports_offset as usize..])?;
+
+        Ok((
+            bytes,
+            DyldChainedFixupCommand {
+                cmd,
+                header,
+                imports,
+            },
+        ))
     }
 }
