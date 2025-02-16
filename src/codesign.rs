@@ -1,5 +1,4 @@
 use bitflags;
-use cryptographic_message_syntax::SignedData;
 use nom::{self, Parser};
 use num_derive::FromPrimitive;
 
@@ -472,29 +471,31 @@ pub struct CodeSignDerEntitlements {
     pub data: Vec<u8>,
 }
 
-#[derive(Debug)]
-pub struct CodeSignSignature {
-    pub generic: CodeSignGenericBlob,
-    pub cms: SignedData,
-}
-impl CodeSignSignature {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignSignature> {
-        let (bytes, generic) = CodeSignGenericBlob::parse(bytes)?;
-        // Apple uses indefinite field lengths from the BER spec to encode some fields here. The
-        // CMS crate doesn't support this encoding type but cryptographic-message-syntax does.
-        let cms = SignedData::parse_ber(&bytes[..generic.length as usize]).unwrap();
+// TODO: BROKEN!
+// #[derive(Debug)]
+// pub struct CodeSignSignature {
+//     pub generic: CodeSignGenericBlob,
+//     pub cms: SignedData,
+// }
+// impl CodeSignSignature {
+//     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignSignature> {
+//         let (bytes, generic) = CodeSignGenericBlob::parse(bytes)?;
+//         // Apple uses indefinite field lengths from the BER spec to encode some fields here. The
+//         // CMS crate doesn't support this encoding type but cryptographic-message-syntax does.
+//         let cms = SignedData::parse_ber(&bytes[..generic.length as usize]).unwrap();
 
-        Ok((bytes, CodeSignSignature { generic, cms }))
-    }
-}
+//         Ok((bytes, CodeSignSignature { generic, cms }))
+//     }
+// }
 
 #[derive(Debug)]
 pub enum CodeSignBlob {
+    None,
     CodeDirectory(CodeSignCodeDirectory),
     Requirements(CodeSignRequirements),
     Entitlements(CodeSignEntitlements),
     DerEntitlements(CodeSignDerEntitlements),
-    SignatureSlot(CodeSignSignature),
+    // SignatureSlot(CodeSignSignature),
 }
 
 #[derive(Debug)]
@@ -538,11 +539,13 @@ impl LoadCommand for CodeSignCommand {
                             data: blob_data.to_vec(),
                         })
                     }
-                    CodeSignSlot::SignatureSlot => {
-                        let (_, signature) = CodeSignSignature::parse(blob_data).unwrap();
-                        CodeSignBlob::SignatureSlot(signature)
-                    }
-                    _ => unimplemented!(),
+                    // TODO: BROKEN!
+                    // CodeSignSlot::SignatureSlot => {
+                    //     // let (_, signature) = CodeSignSignature::parse(blob_data).unwrap();
+                    //     // CodeSignBlob::SignatureSlot(signature)
+                    //     CodeSignBlob::None
+                    // }
+                    _ => CodeSignBlob::None,
                 }
             })
             .collect();
