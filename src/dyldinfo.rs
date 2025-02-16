@@ -555,13 +555,9 @@ pub struct DyldStartsInSegment {
 
 impl DyldStartsInSegment {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldStartsInSegment> {
-        println!("{:?}", bytes);
         let (bytes, size) = nom::number::complete::le_u32(bytes)?;
-        println!("{}", size);
         let (bytes, page_size) = nom::number::complete::le_u16(bytes)?;
-        println!("{}", page_size);
         let (bytes, pointer_format) = DyldPointerFormat::parse(bytes)?;
-        println!("{:?}", pointer_format);
         let (bytes, segment_offset) = nom::number::complete::le_u64(bytes)?;
         let (bytes, max_valid_pointer) = nom::number::complete::le_u32(bytes)?;
         let (bytes, page_count) = nom::number::complete::le_u16(bytes)?;
@@ -602,7 +598,6 @@ impl DyldStartsInImage {
             if *offset == 0 {
                 continue;
             }
-            println!("{:?}", offset);
             let (_, seg_start) = DyldStartsInSegment::parse(&bytes[*offset as usize..])?;
             seg_starts.push(seg_start);
         }
