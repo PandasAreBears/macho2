@@ -5,74 +5,46 @@ use num_derive::FromPrimitive;
 use strum_macros::{Display, EnumString};
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Nom)]
-pub enum MHMagic {
-    // Big-endian machos don't really exist.
-    MhMagic = 0xfeedface,
-    MhMagic64 = 0xfeedfacf,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
+pub enum SectionType {
+    SRegular = 0x0,
+    SZeroFill = 0x1,
+    SCstringLiterals = 0x2,
+    S4ByteLiterals = 0x3,
+    S8ByteLiterals = 0x4,
+    SLiteralPointers = 0x5,
+    SNonLazySymbolPointers = 0x6,
+    SLazySymbolPointers = 0x7,
+    SSymbolStubs = 0x8,
+    SModInitFuncPointers = 0x9,
+    SModTermFuncPointers = 0xa,
+    SCoalesced = 0xb,
+    SGbZeroFill = 0xc,
+    SInterposing = 0xd,
+    S16ByteLiterals = 0xe,
+    SDtraceDof = 0xf,
+    SLazyDylibSymbolPointers = 0x10,
+    SThreadLocalRegular = 0x11,
+    SThreadLocalZeroFill = 0x12,
+    SThreadLocalVariables = 0x13,
+    SThreadLocalVariablePointers = 0x14,
+    SThreadLocalInitFunctionPointers = 0x15,
+    SInitFuncOffsets = 0x16,
 }
 
-bitflags::bitflags! {
-    #[repr(transparent)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct MHFlags: u32 {
-        const MH_NOUNDEFS = 0x1;
-        const MH_INCRLINK = 0x2;
-        const MH_DYLDLINK = 0x4;
-        const MH_BINDATLOAD = 0x8;
-        const MH_PREBOUND = 0x10;
-        const MH_SPLIT_SEGS = 0x20;
-        const MH_LAZY_INIT = 0x40;
-        const MH_TWOLEVEL = 0x80;
-        const MH_FORCE_FLAT = 0x100;
-        const MH_NOMULTIDEFS = 0x200;
-        const MH_NOFIXPREBINDING = 0x400;
-        const MH_PREBINDABLE = 0x800;
-        const MH_ALLMODSBOUND = 0x1000;
-        const MH_SUBSECTIONS_VIA_SYMBOLS = 0x2000;
-        const MH_CANONICAL = 0x4000;
-        const MH_WEAK_DEFINES = 0x8000;
-        const MH_BINDS_TO_WEAK = 0x10000;
-        const MH_ALLOW_STACK_EXECUTION = 0x20000;
-        const MH_ROOT_SAFE = 0x40000;
-        const MH_SETUID_SAFE = 0x80000;
-        const MH_NO_REEXPORTED_DYLIBS = 0x100000;
-        const MH_PIE = 0x200000;
-        const MH_DEAD_STRIPPABLE_DYLIB = 0x400000;
-        const MH_HAS_TLV_DESCRIPTORS = 0x800000;
-        const MH_NO_HEAP_EXECUTION = 0x1000000;
-        const MH_APP_EXTENSION_SAFE = 0x02000000;
-        const MH_NLIST_OUTOFSYNC_WITH_DYLDINFO = 0x04000000;
-        const MH_SIM_SUPPORT = 0x08000000;
-        const MH_IMPLICIT_PAGEZERO = 0x10000000;
-        const MH_DYLIB_IN_CACHE = 0x80000000;
+impl SectionType {
+    pub const SECTION_TYPE_MASK: u32 = 0x000000ff;
+
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], SectionType> {
+        let (bytes, sectype) = nom::number::complete::le_u32(bytes)?;
+        match num::FromPrimitive::from_u32(sectype & Self::SECTION_TYPE_MASK) {
+            Some(sectype) => Ok((bytes, sectype)),
+            None => Err(nom::Err::Failure(nom::error::Error::new(
+                bytes,
+                nom::error::ErrorKind::Tag,
+            ))),
+        }
     }
-}
-
-impl MHFlags {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], MHFlags> {
-        let (bytes, flags) = nom::number::complete::le_u32(bytes)?;
-        Ok((bytes, MHFlags::from_bits_truncate(flags)))
-    }
-}
-
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Nom)]
-pub enum MHFileType {
-    MhObject = 0x1,
-    MhExecute = 0x2,
-    MhFvmlib = 0x3,
-    MhCore = 0x4,
-    MhPreload = 0x5,
-    MhDylib = 0x6,
-    MhDylinker = 0x7,
-    MhBundle = 0x8,
-    MhDylibStub = 0x9,
-    MhDsym = 0xa,
-    MhKextBundle = 0xb,
-    MhFileset = 0xc,
-    MhGpuExecute = 0xd,
-    MhGpuDylib = 0xe,
 }
 
 #[repr(u32)]
@@ -150,49 +122,6 @@ impl SGFlags {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], SGFlags> {
         let (bytes, flags) = nom::number::complete::le_u32(bytes)?;
         Ok((bytes, SGFlags::from_bits_truncate(flags)))
-    }
-}
-
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
-pub enum SectionType {
-    SRegular = 0x0,
-    SZeroFill = 0x1,
-    SCstringLiterals = 0x2,
-    S4ByteLiterals = 0x3,
-    S8ByteLiterals = 0x4,
-    SLiteralPointers = 0x5,
-    SNonLazySymbolPointers = 0x6,
-    SLazySymbolPointers = 0x7,
-    SSymbolStubs = 0x8,
-    SModInitFuncPointers = 0x9,
-    SModTermFuncPointers = 0xa,
-    SCoalesced = 0xb,
-    SGbZeroFill = 0xc,
-    SInterposing = 0xd,
-    S16ByteLiterals = 0xe,
-    SDtraceDof = 0xf,
-    SLazyDylibSymbolPointers = 0x10,
-    SThreadLocalRegular = 0x11,
-    SThreadLocalZeroFill = 0x12,
-    SThreadLocalVariables = 0x13,
-    SThreadLocalVariablePointers = 0x14,
-    SThreadLocalInitFunctionPointers = 0x15,
-    SInitFuncOffsets = 0x16,
-}
-
-impl SectionType {
-    pub const SECTION_TYPE_MASK: u32 = 0x000000ff;
-
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], SectionType> {
-        let (bytes, sectype) = nom::number::complete::le_u32(bytes)?;
-        match num::FromPrimitive::from_u32(sectype & Self::SECTION_TYPE_MASK) {
-            Some(sectype) => Ok((bytes, sectype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
-        }
     }
 }
 

@@ -9,8 +9,8 @@ pub mod machine;
 use codesign::CodeSignCommand;
 use dyldinfo::DyldChainedFixupCommand;
 use fat::{FatArch, FatHeader};
-use flags::{FatMagic, LCLoadCommand, MHMagic};
-use header::MachHeader;
+use flags::{FatMagic, LCLoadCommand};
+use header::{MHMagic, MachHeader};
 use load_command::{
     BuildVersionCommand, DyldInfoCommand, DylibCommand, DylinkerCommand, DysymtabCommand,
     EncryptionInfoCommand, EncryptionInfoCommand64, EntryPointCommand, FilesetEntryCommand,
