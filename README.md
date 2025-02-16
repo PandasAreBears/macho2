@@ -8,9 +8,17 @@ A better parser for the MachO file format.
 - [x] Parse MachO header
 - [x] Supports Fat MachO files
 - [x] Parse MachO all known load commands
+- [x] Parse code signature, chained fixups, dysymtab, and more.
 - [x] Tool for dumping MachO header/ load commands
 - [x] Tool for extracting thin MachO from fat MachO
-- [ ] Parse LinkeditDataCommand specific data (CodeSignature, etc.)
+
+## TODO
+
+- [ ] Parse exports trie in LC_DYLD_EXPORTS_TRIE
+- [ ] Parse CMS signature in LC_CODE_SIGNATURE
+- [ ] Walk the chained fixups, and resolve library ordinals across several load commands
+- [ ] Make the tools more user-friendly, and make more tools
+
 
 
 ## Installation
