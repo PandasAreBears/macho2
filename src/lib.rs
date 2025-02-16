@@ -1,4 +1,5 @@
 pub mod codesign;
+pub mod commands;
 pub mod dyldinfo;
 pub mod dylib;
 pub mod fat;
@@ -8,8 +9,14 @@ mod helpers;
 pub mod load_command;
 pub mod machine;
 pub mod segment;
+pub mod symtab;
 
 use codesign::CodeSignCommand;
+use commands::{
+    BuildVersionCommand, EncryptionInfoCommand, EncryptionInfoCommand64, FunctionStartsCommand,
+    LinkeditDataCommand, PrebindCksumCommand, RoutinesCommand64, RpathCommand, SymsegCommand,
+    ThreadCommand, TwoLevelHintsCommand, UuidCommand, VersionMinCommand,
+};
 use dyldinfo::DyldChainedFixupCommand;
 use dylib::{
     DylibCommand, DylinkerCommand, PreboundDylibCommand, SubClientCommand, SubFrameworkCommand,
@@ -19,15 +26,13 @@ use fat::{FatArch, FatHeader};
 use flags::{FatMagic, LCLoadCommand};
 use header::{MHMagic, MachHeader};
 use load_command::{
-    BuildVersionCommand, DyldInfoCommand, DysymtabCommand, EncryptionInfoCommand,
-    EncryptionInfoCommand64, EntryPointCommand, FilesetEntryCommand, FunctionStartsCommand,
-    LinkeditDataCommand, LinkerOptionCommand, NoteCommand, PrebindCksumCommand, RoutinesCommand64,
-    RpathCommand, SourceVersionCommand, SymsegCommand, SymtabCommand, ThreadCommand,
-    TwoLevelHintsCommand, UuidCommand, VersionMinCommand,
+    DyldInfoCommand, EntryPointCommand, FilesetEntryCommand, LinkerOptionCommand, NoteCommand,
+    SourceVersionCommand,
 };
 
 use load_command::LoadCommand as IOnlyNeedThisForTheTrait;
 use segment::{SegmentCommand32, SegmentCommand64};
+use symtab::{DysymtabCommand, SymtabCommand};
 
 #[derive(Debug)]
 pub enum LoadCommand {

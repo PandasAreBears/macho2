@@ -3,9 +3,10 @@ use nom::{self, Parser};
 use num_derive::FromPrimitive;
 
 use crate::{
+    commands::LinkeditDataCommand,
     header::MachHeader,
     helpers::string_upto_null_terminator,
-    load_command::{LinkeditDataCommand, LoadCommand, LoadCommandBase},
+    load_command::{LoadCommand, LoadCommandBase},
 };
 
 bitflags::bitflags! {

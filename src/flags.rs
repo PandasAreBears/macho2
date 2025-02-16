@@ -1,8 +1,6 @@
 #![allow(dead_code)]
 
 use nom_derive::Nom;
-use num_derive::FromPrimitive;
-use strum_macros::{Display, EnumString};
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Nom)]
@@ -64,98 +62,8 @@ impl LCLoadCommand {
 }
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Nom, EnumString, Display)]
-pub enum Tool {
-    Clang = 1,
-    Swift = 2,
-    Ld = 3,
-    Lld = 4,
-    Metal = 1024,
-    Airlld = 1025,
-    Airnt = 1026,
-    AirntPlugin = 1027,
-    Airpack = 1028,
-    Gpuarchiver = 1031,
-    MetalFramework = 1032,
-}
-
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Nom, EnumString, Display)]
-pub enum Platform {
-    Unknown = 0,
-    Any = 0xFFFFFFFF,
-    MacOS = 1,
-    IOS = 2,
-    TvOS = 3,
-    WatchOS = 4,
-    BridgeOS = 5,
-    MacCatalyst = 6,
-    IOSSimulator = 7,
-    TvOSSimulator = 8,
-    WatchOSSimulator = 9,
-    DriverKit = 10,
-    VisionOS = 11,
-    VisionOSSimulator = 12,
-    Firmware = 13,
-    SepOS = 14,
-}
-
-#[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Nom)]
 pub enum FatMagic {
     Fat = 0xcafebabe,
     Fat64 = 0xcafebabf,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
-pub enum NlistTypeType {
-    Undefined = 0x0,
-    Absolute = 0x2,
-    // example: /usr/bin/lipo arm64 slice
-    Unknown1 = 0x4,
-    // example: /usr/bin/lipo arm64 slice
-    Unknown2 = 0x6,
-    Section = 0xe,
-    PreboundUndefined = 0xc,
-    Indirect = 0xa,
-}
-
-impl NlistTypeType {
-    pub const NLIST_TYPE_TYPE_BITMASK: u8 = 0x0e;
-
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], NlistTypeType> {
-        let (bytes, n_type) = nom::number::complete::le_u8(bytes)?;
-        match num::FromPrimitive::from_u8(n_type & Self::NLIST_TYPE_TYPE_BITMASK) {
-            Some(n_type) => Ok((bytes, n_type)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
-pub enum NlistReferenceType {
-    UndefinedNonLazy = 0,
-    UndefinedLazy = 1,
-    Defined = 2,
-    PrivateDefined = 3,
-    PrivateUndefinedNonLazy = 4,
-    PrivateUndefinedLazy = 5,
-}
-
-impl NlistReferenceType {
-    pub const NLIST_REFERENCE_FLAG_BITMASK: u8 = 0x7;
-
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], NlistReferenceType> {
-        let (bytes, n_type) = nom::number::complete::le_u8(bytes)?;
-        match num::FromPrimitive::from_u8(n_type & Self::NLIST_REFERENCE_FLAG_BITMASK) {
-            Some(n_type) => Ok((bytes, n_type)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
-        }
-    }
 }

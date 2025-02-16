@@ -4,9 +4,10 @@ use nom::{error::Error, Parser};
 use num_derive::FromPrimitive;
 
 use crate::{
+    commands::LinkeditDataCommand,
     header::MachHeader,
     helpers::{read_sleb, read_uleb, string_upto_null_terminator},
-    load_command::{LinkeditDataCommand, LoadCommand, LoadCommandBase},
+    load_command::{LoadCommand, LoadCommandBase},
 };
 
 #[derive(Debug, FromPrimitive, Clone, Copy)]
