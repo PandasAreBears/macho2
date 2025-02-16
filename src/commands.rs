@@ -347,10 +347,10 @@ impl LoadCommand for FunctionStartsCommand {
         // Drop leading zeros from the function offsets
         let funcs: Vec<u64> = funcs.into_iter().skip_while(|&x| x == 0).collect();
 
-        let mut state = 0;
+        let mut state: u64 = 0;
         let mut results = vec![];
         for func in funcs.windows(2) {
-            state += func[0];
+            state = state.wrapping_add(func[0]);
             results.push(FunctionOffset {
                 offset: state,
                 size: func[1],
