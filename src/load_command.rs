@@ -975,12 +975,12 @@ impl DysymtabCommand {
             while !cursor.is_empty() {
                 let (remaining, index) = nom::number::complete::le_u32(cursor)?;
                 cursor = remaining;
-                if index == Self::INDIRECT_SYMBOL_LOCAL {
+                if index & Self::INDIRECT_SYMBOL_LOCAL > 0 {
                     println!("Local symbol");
                     // TODO: Do something with this
                     continue;
                 }
-                if index == Self::INDIRECT_SYMBOL_ABS {
+                if index & Self::INDIRECT_SYMBOL_ABS > 0 {
                     println!("Absolute symbol");
                     // TODO: Do something with this
                     continue;
@@ -1199,6 +1199,9 @@ pub fn read_uleb(bytes: &[u8]) -> nom::IResult<&[u8], u64> {
 
 pub fn read_uleb_many<'a>(mut bytes: &'a [u8]) -> nom::IResult<&'a [u8], Vec<u64>> {
     let mut result = Vec::new();
+    if bytes.is_empty() {
+        return Ok((bytes, result));
+    }
 
     loop {
         let (remaining, value) = read_uleb(bytes)?;
