@@ -637,6 +637,7 @@ impl DyldStartsInImage {
     }
 }
 
+#[repr(u16)]
 #[derive(Debug, FromPrimitive)]
 pub enum DyldPointerFormat {
     Arm64e = 1,
@@ -655,10 +656,10 @@ pub enum DyldPointerFormat {
 }
 
 impl DyldPointerFormat {
-    pub const DYLD_POINTER_MASK: u32 = 0xFF;
+    pub const DYLD_POINTER_MASK: u16 = 0xFF;
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldPointerFormat> {
-        let (bytes, value) = nom::number::complete::le_u32(bytes)?;
-        match num::FromPrimitive::from_u32(value & Self::DYLD_POINTER_MASK) {
+        let (bytes, value) = nom::number::complete::le_u16(bytes)?;
+        match num::FromPrimitive::from_u16(value & Self::DYLD_POINTER_MASK) {
             Some(format) => Ok((bytes, format)),
             None => Err(nom::Err::Failure(nom::error::Error::new(
                 bytes,

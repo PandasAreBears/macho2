@@ -64,16 +64,6 @@ fn main() {
         return;
     };
 
-    // println!("{:#?}", macho.header);
-
-    // macho
-    //     .load_commands
-    //     .iter()
-    //     .filter(|lc| match lc {
-    //         LoadCommand::LoadDylib(_) => true,
-    //         _ => false,
-    //     })
-    //     .for_each(|f| {
-    //         println!("{:#?}", f);
-    //     });
+    println!("{:#?}", macho.header);
+    println!("{:#?}", macho.load_commands);
 }
