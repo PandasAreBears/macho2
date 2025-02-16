@@ -1,27 +1,15 @@
 #![allow(dead_code)]
 
+use nom_derive::Nom;
 use num_derive::FromPrimitive;
 use strum_macros::{Display, EnumString};
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Nom)]
 pub enum MHMagic {
     // Big-endian machos don't really exist.
     MhMagic = 0xfeedface,
     MhMagic64 = 0xfeedfacf,
-}
-
-impl MHMagic {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], MHMagic> {
-        let (bytes, magic) = nom::number::complete::le_u32(bytes)?;
-        match num::FromPrimitive::from_u32(magic) {
-            Some(magic) => Ok((bytes, magic)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
-        }
-    }
 }
 
 bitflags::bitflags! {
@@ -69,7 +57,7 @@ impl MHFlags {
 }
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Nom)]
 pub enum MHFileType {
     MhObject = 0x1,
     MhExecute = 0x2,
@@ -87,21 +75,8 @@ pub enum MHFileType {
     MhGpuDylib = 0xe,
 }
 
-impl MHFileType {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], MHFileType> {
-        let (bytes, filetype) = nom::number::complete::le_u32(bytes)?;
-        match num::FromPrimitive::from_u32(filetype) {
-            Some(filetype) => Ok((bytes, filetype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
-        }
-    }
-}
-
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Nom)]
 pub enum LCLoadCommand {
     LcSegment = 0x1,
     LcSymtab = 0x2,
@@ -157,17 +132,6 @@ pub enum LCLoadCommand {
 
 impl LCLoadCommand {
     pub const LC_REQ_DYLD: u32 = 0x80000000;
-
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], LCLoadCommand> {
-        let (bytes, cmd) = nom::number::complete::le_u32(bytes)?;
-        match num::FromPrimitive::from_u32(cmd) {
-            Some(cmd) => Ok((bytes, cmd)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
-        }
-    }
 }
 
 bitflags::bitflags! {
@@ -222,7 +186,7 @@ impl SectionType {
 
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], SectionType> {
         let (bytes, sectype) = nom::number::complete::le_u32(bytes)?;
-        match num::FromPrimitive::from_u32(sectype) {
+        match num::FromPrimitive::from_u32(sectype & Self::SECTION_TYPE_MASK) {
             Some(sectype) => Ok((bytes, sectype)),
             None => Err(nom::Err::Failure(nom::error::Error::new(
                 bytes,
@@ -257,7 +221,10 @@ impl SectionAttributes {
 
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], SectionAttributes> {
         let (bytes, secattrs) = nom::number::complete::le_u32(bytes)?;
-        Ok((bytes, SectionAttributes::from_bits_truncate(secattrs)))
+        Ok((
+            bytes,
+            SectionAttributes::from_bits_truncate(secattrs & Self::SECTION_ATTRIBUTES_MASK),
+        ))
     }
 }
 
@@ -297,7 +264,7 @@ impl DylibUseFlags {
 }
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, EnumString, Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Nom, EnumString, Display)]
 pub enum Tool {
     Clang = 1,
     Swift = 2,
@@ -312,21 +279,8 @@ pub enum Tool {
     MetalFramework = 1032,
 }
 
-impl Tool {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Tool> {
-        let (bytes, tool) = nom::number::complete::le_u32(bytes)?;
-        match num::FromPrimitive::from_u32(tool) {
-            Some(tool) => Ok((bytes, tool)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
-        }
-    }
-}
-
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, EnumString, Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Nom, EnumString, Display)]
 pub enum Platform {
     Unknown = 0,
     Any = 0xFFFFFFFF,
@@ -346,37 +300,11 @@ pub enum Platform {
     SepOS = 14,
 }
 
-impl Platform {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Platform> {
-        let (bytes, platform) = nom::number::complete::le_u32(bytes)?;
-        match num::FromPrimitive::from_u32(platform) {
-            Some(platform) => Ok((bytes, platform)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
-        }
-    }
-}
-
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Nom)]
 pub enum FatMagic {
     Fat = 0xcafebabe,
     Fat64 = 0xcafebabf,
-}
-
-impl FatMagic {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], FatMagic> {
-        let (bytes, magic) = nom::number::complete::be_u32(bytes)?;
-        match num::FromPrimitive::from_u32(magic) {
-            Some(magic) => Ok((bytes, magic)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]

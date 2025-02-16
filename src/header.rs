@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
-use nom::IResult;
+use nom::{sequence::tuple, IResult};
+use nom_derive::Parse;
 
 use crate::flags::{MHFileType, MHFlags, MHMagic};
 use crate::machine::{CpuSubType, CpuType};
@@ -18,13 +19,14 @@ pub struct MachHeader32 {
 
 impl MachHeader32 {
     pub fn parse(bytes: &[u8]) -> IResult<&[u8], MachHeader32> {
-        let (bytes, magic) = MHMagic::parse(bytes)?;
-        let (bytes, cputype) = CpuType::parse(bytes)?;
-        let (bytes, cpusubtype) = CpuSubType::parse(bytes, cputype)?;
-        let (bytes, filetype) = MHFileType::parse(bytes)?;
-        let (bytes, ncmds) = nom::number::complete::le_u32(bytes)?;
-        let (bytes, sizeofcmds) = nom::number::complete::le_u32(bytes)?;
-        let (bytes, flags) = MHFlags::parse(bytes)?;
+        let (bytes, (magic, cputype)) = tuple((MHMagic::parse_le, CpuType::parse))(bytes)?;
+        let (bytes, (cpusubtype, filetype, ncmds, sizeofcmds, flags)) = tuple((
+            |input| CpuSubType::parse(input, cputype),
+            MHFileType::parse_le,
+            nom::number::complete::le_u32,
+            nom::number::complete::le_u32,
+            MHFlags::parse,
+        ))(bytes)?;
 
         Ok((
             bytes,
@@ -55,14 +57,15 @@ pub struct MachHeader64 {
 
 impl MachHeader64 {
     pub fn parse(bytes: &[u8]) -> IResult<&[u8], MachHeader64> {
-        let (bytes, magic) = MHMagic::parse(bytes)?;
-        let (bytes, cputype) = CpuType::parse(bytes)?;
-        let (bytes, cpusubtype) = CpuSubType::parse(bytes, cputype)?;
-        let (bytes, filetype) = MHFileType::parse(bytes)?;
-        let (bytes, ncmds) = nom::number::complete::le_u32(bytes)?;
-        let (bytes, sizeofcmds) = nom::number::complete::le_u32(bytes)?;
-        let (bytes, flags) = MHFlags::parse(bytes)?;
-        let (bytes, reserved) = nom::number::complete::le_u32(bytes)?;
+        let (bytes, (magic, cputype)) = tuple((MHMagic::parse_le, CpuType::parse))(bytes)?;
+        let (bytes, (cpusubtype, filetype, ncmds, sizeofcmds, flags, reserved)) = tuple((
+            |input| CpuSubType::parse(input, cputype),
+            MHFileType::parse_le,
+            nom::number::complete::le_u32,
+            nom::number::complete::le_u32,
+            MHFlags::parse,
+            nom::number::complete::le_u32,
+        ))(bytes)?;
 
         Ok((
             bytes,
@@ -88,7 +91,7 @@ pub enum MachHeader {
 
 impl MachHeader {
     pub fn parse(bytes: &[u8]) -> IResult<&[u8], MachHeader> {
-        let (_, magic) = MHMagic::parse(bytes)?;
+        let (_, magic) = MHMagic::parse_le(bytes)?;
 
         match magic {
             MHMagic::MhMagic => {

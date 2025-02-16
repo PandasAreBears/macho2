@@ -3,6 +3,7 @@
 use crate::flags::FatMagic;
 use crate::machine::{CpuSubType, CpuType};
 use nom;
+use nom_derive::Parse;
 
 #[derive(Debug, Clone, Copy)]
 pub struct FatHeader {
@@ -12,7 +13,7 @@ pub struct FatHeader {
 
 impl FatHeader {
     pub fn parse(input: &[u8]) -> nom::IResult<&[u8], FatHeader> {
-        let (input, magic) = FatMagic::parse(input)?;
+        let (input, magic) = FatMagic::parse_be(input)?;
         let (input, nfat_arch) = nom::number::complete::be_u32(input)?;
 
         Ok((input, FatHeader { magic, nfat_arch }))

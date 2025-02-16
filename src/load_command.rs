@@ -9,6 +9,7 @@ use crate::{
     header::MachHeader,
     machine::{ThreadState, ThreadStateBase},
 };
+use nom_derive::Parse;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy)]
@@ -19,7 +20,7 @@ pub struct LoadCommandBase {
 
 impl LoadCommandBase {
     pub fn parse<'a>(bytes: &[u8]) -> nom::IResult<&[u8], LoadCommandBase> {
-        let (push, cmd) = LCLoadCommand::parse(bytes)?;
+        let (push, cmd) = LCLoadCommand::parse_le(bytes)?;
         let (_, cmdsize) = nom::number::complete::le_u32(push)?;
 
         Ok((bytes, LoadCommandBase { cmd, cmdsize }))
@@ -106,24 +107,9 @@ impl Section32 {
         let (bytes, reloff) = nom::number::complete::le_u32(bytes)?;
         let (bytes, nreloc) = nom::number::complete::le_u32(bytes)?;
 
-        // Read the combined flags field
-        let (bytes, flags) = nom::number::complete::le_u32(bytes)?;
-
-        // Extract section type using mask
-        let sectype = flags & SectionType::SECTION_TYPE_MASK;
-        let flags_sectype = match num::FromPrimitive::from_u32(sectype) {
-            Some(t) => t,
-            None => {
-                return Err(nom::Err::Failure(nom::error::Error::new(
-                    bytes,
-                    nom::error::ErrorKind::Tag,
-                )))
-            }
-        };
-
-        // Extract section attributes using mask
-        let secattrs = flags & SectionAttributes::SECTION_ATTRIBUTES_MASK;
-        let flags_secattrs = SectionAttributes::from_bits_truncate(secattrs);
+        // Feed in the same byte for these two
+        let (_, flags_sectype) = SectionType::parse(bytes)?;
+        let (bytes, flags_secattrs) = SectionAttributes::parse(bytes)?;
 
         let (bytes, reserved1) = nom::number::complete::le_u32(bytes)?;
         let (bytes, reserved2) = nom::number::complete::le_u32(bytes)?;
@@ -178,24 +164,9 @@ impl Section64 {
         let (bytes, reloff) = nom::number::complete::le_u32(bytes)?;
         let (bytes, nreloc) = nom::number::complete::le_u32(bytes)?;
 
-        // Read the combined flags field
-        let (bytes, flags) = nom::number::complete::le_u32(bytes)?;
-
-        // Extract section type using mask
-        let sectype = flags & SectionType::SECTION_TYPE_MASK;
-        let flags_sectype = match num::FromPrimitive::from_u32(sectype) {
-            Some(t) => t,
-            None => {
-                return Err(nom::Err::Failure(nom::error::Error::new(
-                    bytes,
-                    nom::error::ErrorKind::Tag,
-                )))
-            }
-        };
-
-        // Extract section attributes using mask
-        let secattrs = flags & SectionAttributes::SECTION_ATTRIBUTES_MASK;
-        let flags_secattrs = SectionAttributes::from_bits_truncate(secattrs);
+        // Feed in the same byte for these two
+        let (_, flags_sectype) = SectionType::parse(bytes)?;
+        let (bytes, flags_secattrs) = SectionAttributes::parse(bytes)?;
 
         let (bytes, reserved1) = nom::number::complete::le_u32(bytes)?;
         let (bytes, reserved2) = nom::number::complete::le_u32(bytes)?;
@@ -1408,7 +1379,7 @@ pub struct BuildToolVersion {
 
 impl BuildToolVersion {
     pub fn parse<'a>(bytes: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
-        let (bytes, tool) = Tool::parse(bytes)?;
+        let (bytes, tool) = Tool::parse_le(bytes)?;
         let (bytes, version) = nom::number::complete::le_u32(bytes)?;
 
         Ok((
@@ -1440,7 +1411,7 @@ impl LoadCommand for BuildVersionCommand {
         _: &'a [u8],
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
-        let (cursor, platform) = Platform::parse(cursor)?;
+        let (cursor, platform) = Platform::parse_le(cursor)?;
         let (cursor, minos) = nom::number::complete::le_u32(cursor)?;
         let (cursor, sdk) = nom::number::complete::le_u32(cursor)?;
         let (mut cursor, ntools) = nom::number::complete::le_u32(cursor)?;
