@@ -5,6 +5,8 @@ use nom_derive::{Nom, Parse};
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Nom)]
 pub enum LCLoadCommand {
+    // TODO: What is this load command doing ? e.g. /System/Library/VideoProcessors/CCPortrait.bundle/ccportrait_archive_bin.metallib
+    None = 0x0,
     LcSegment = 0x1,
     LcSymtab = 0x2,
     LcSymseg = 0x3,

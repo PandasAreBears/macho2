@@ -53,6 +53,10 @@ pub struct RebaseInstruction {
 
 impl RebaseInstruction {
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Vec<RebaseInstruction>> {
+        if bytes.is_empty() {
+            return Ok((bytes, vec![]));
+        }
+
         let mut instructions = vec![];
         let mut offset = 0;
         let mut ordinal = 0;
@@ -567,6 +571,11 @@ impl DyldStartsInSegment {
 
         let mut page_start = vec![];
         for _ in 0..page_count {
+            if bytes.is_empty() {
+                // TODO: e.g. /usr/lib/dyld
+                eprintln!("Ran out of bytes while parsing DyldStartsInSegment");
+                break;
+            }
             let (cursor, start) = nom::number::complete::le_u16::<_, Error<_>>(bytes).unwrap();
             bytes = cursor;
             if Self::DYLD_CHAINED_PTR_START_NONE & start > 0 {

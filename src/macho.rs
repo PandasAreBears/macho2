@@ -1,3 +1,5 @@
+use std::process::exit;
+
 use crate::codesign::CodeSignCommand;
 use crate::commands::{
     BuildVersionCommand, EncryptionInfoCommand, EncryptionInfoCommand64, EntryPointCommand,
@@ -20,6 +22,7 @@ use crate::symtab::{DysymtabCommand, SymtabCommand};
 
 #[derive(Debug)]
 pub enum LoadCommand {
+    None,
     Segment32(SegmentCommand32),
     Symtab(SymtabCommand),
     Symseg(SymsegCommand),
@@ -287,6 +290,7 @@ impl LoadCommand {
                 let (bytes, cmd) = FilesetEntryCommand::parse(bytes, base, header, all).unwrap();
                 Ok((bytes, LoadCommand::FilesetEntry(cmd)))
             }
+            LCLoadCommand::None => Ok((bytes, LoadCommand::None)),
         }
     }
 }
@@ -310,16 +314,17 @@ impl MachO {
         let mut cmds = Vec::new();
         let mut symtab_cmd = None;
         for _ in 0..header.ncmds() {
-            let (next, cmd) =
-                LoadCommand::parse(cursor, header, bytes, symtab_cmd.clone()).unwrap();
+            match LoadCommand::parse(cursor, header, bytes, symtab_cmd.clone()) {
+                Ok((next, cmd)) => {
+                    if let LoadCommand::Symtab(symtab) = &cmd {
+                        symtab_cmd = Some(symtab.clone());
+                    }
 
-            // The DysymtabCommand depends on the SymtabCommand, so we have to do this here.
-            if let LoadCommand::Symtab(symtab) = &cmd {
-                symtab_cmd = Some(symtab.clone());
+                    cmds.push(cmd);
+                    cursor = next;
+                }
+                Err(e) => return Err(e),
             }
-
-            cmds.push(cmd);
-            cursor = next;
         }
 
         Ok(Self {
@@ -367,6 +372,13 @@ impl<'a> FatMachO<'a> {
         let offset = arch.offset() as usize;
         let size = arch.size() as usize;
         let bytes = &self.bytes[offset..offset + size];
+
+        if !MachO::is_macho_magic(bytes) {
+            // TODO: Should probably return a Result instead of exiting
+            eprintln!("Fat MachO slice is not a MachO 🤔");
+            exit(0);
+        }
+
         MachO::parse(bytes).unwrap()
     }
 }

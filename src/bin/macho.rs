@@ -1,4 +1,7 @@
-use macho2::macho::{FatMachO, LoadCommand, MachO};
+use macho2::{
+    header::MHMagic,
+    macho::{FatMachO, MachO},
+};
 use std::{
     env,
     fs::File,
@@ -24,6 +27,11 @@ fn main() {
     let mut buffer = Vec::new();
     if let Err(e) = file.read_to_end(&mut buffer) {
         eprintln!("Failed to read file: {}", e);
+        return;
+    }
+
+    if buffer.len() < std::mem::size_of::<MHMagic>() {
+        eprintln!("File too short to be a Mach-O file");
         return;
     }
 
@@ -58,14 +66,14 @@ fn main() {
 
     // println!("{:#?}", macho.header);
 
-    macho
-        .load_commands
-        .iter()
-        .filter(|lc| match lc {
-            LoadCommand::LoadDylib(_) => true,
-            _ => false,
-        })
-        .for_each(|f| {
-            println!("{:#?}", f);
-        });
+    // macho
+    //     .load_commands
+    //     .iter()
+    //     .filter(|lc| match lc {
+    //         LoadCommand::LoadDylib(_) => true,
+    //         _ => false,
+    //     })
+    //     .for_each(|f| {
+    //         println!("{:#?}", f);
+    //     });
 }

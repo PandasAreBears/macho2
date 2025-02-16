@@ -30,6 +30,7 @@ pub enum CpuType {
     I860 = 15,
     PowerPC = 18,
     PowerPC64 = 18 | CpuABI::ABI64 as u32,
+    Unknown = !0,
 }
 
 impl CpuType {
@@ -37,10 +38,7 @@ impl CpuType {
         let (bytes, cputype) = nom::number::complete::le_u32(bytes)?;
         match num::FromPrimitive::from_u32(cputype) {
             Some(cputype) => Ok((bytes, cputype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Ok((bytes, CpuType::Unknown)),
         }
     }
 
@@ -48,10 +46,7 @@ impl CpuType {
         let (bytes, cputype) = nom::number::complete::be_u32(bytes)?;
         match num::FromPrimitive::from_u32(cputype) {
             Some(cputype) => Ok((bytes, cputype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Ok((bytes, CpuType::Unknown)),
         }
     }
 }
