@@ -5,6 +5,7 @@ pub mod flags;
 pub mod header;
 pub mod load_command;
 pub mod machine;
+pub mod segment;
 
 use codesign::CodeSignCommand;
 use dyldinfo::DyldChainedFixupCommand;
@@ -15,13 +16,14 @@ use load_command::{
     BuildVersionCommand, DyldInfoCommand, DylibCommand, DylinkerCommand, DysymtabCommand,
     EncryptionInfoCommand, EncryptionInfoCommand64, EntryPointCommand, FilesetEntryCommand,
     FunctionStartsCommand, LinkeditDataCommand, LinkerOptionCommand, NoteCommand,
-    PrebindCksumCommand, PreboundDylibCommand, RoutinesCommand64, RpathCommand, SegmentCommand32,
-    SegmentCommand64, SourceVersionCommand, SubClientCommand, SubFrameworkCommand,
-    SubLibraryCommand, SubUmbrellaCommand, SymsegCommand, SymtabCommand, ThreadCommand,
-    TwoLevelHintsCommand, UuidCommand, VersionMinCommand,
+    PrebindCksumCommand, PreboundDylibCommand, RoutinesCommand64, RpathCommand,
+    SourceVersionCommand, SubClientCommand, SubFrameworkCommand, SubLibraryCommand,
+    SubUmbrellaCommand, SymsegCommand, SymtabCommand, ThreadCommand, TwoLevelHintsCommand,
+    UuidCommand, VersionMinCommand,
 };
 
 use load_command::LoadCommand as IOnlyNeedThisForTheTrait;
+use segment::{SegmentCommand32, SegmentCommand64};
 
 #[derive(Debug)]
 pub enum LoadCommand {

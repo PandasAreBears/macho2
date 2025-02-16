@@ -5,49 +5,6 @@ use num_derive::FromPrimitive;
 use strum_macros::{Display, EnumString};
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
-pub enum SectionType {
-    SRegular = 0x0,
-    SZeroFill = 0x1,
-    SCstringLiterals = 0x2,
-    S4ByteLiterals = 0x3,
-    S8ByteLiterals = 0x4,
-    SLiteralPointers = 0x5,
-    SNonLazySymbolPointers = 0x6,
-    SLazySymbolPointers = 0x7,
-    SSymbolStubs = 0x8,
-    SModInitFuncPointers = 0x9,
-    SModTermFuncPointers = 0xa,
-    SCoalesced = 0xb,
-    SGbZeroFill = 0xc,
-    SInterposing = 0xd,
-    S16ByteLiterals = 0xe,
-    SDtraceDof = 0xf,
-    SLazyDylibSymbolPointers = 0x10,
-    SThreadLocalRegular = 0x11,
-    SThreadLocalZeroFill = 0x12,
-    SThreadLocalVariables = 0x13,
-    SThreadLocalVariablePointers = 0x14,
-    SThreadLocalInitFunctionPointers = 0x15,
-    SInitFuncOffsets = 0x16,
-}
-
-impl SectionType {
-    pub const SECTION_TYPE_MASK: u32 = 0x000000ff;
-
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], SectionType> {
-        let (bytes, sectype) = nom::number::complete::le_u32(bytes)?;
-        match num::FromPrimitive::from_u32(sectype & Self::SECTION_TYPE_MASK) {
-            Some(sectype) => Ok((bytes, sectype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
-        }
-    }
-}
-
-#[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Nom)]
 pub enum LCLoadCommand {
     LcSegment = 0x1,
@@ -106,74 +63,6 @@ impl LCLoadCommand {
     pub const LC_REQ_DYLD: u32 = 0x80000000;
 }
 
-bitflags::bitflags! {
-    #[repr(transparent)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct SGFlags: u32 {
-        const SG_HIGHVM = 0x1;
-        const SG_FVMLIB = 0x2;
-        const SG_NORELOC = 0x4;
-        const SG_PROTECTED_VERSION_1 = 0x8;
-        const SG_READ_ONLY = 0x10;
-    }
-}
-
-impl SGFlags {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], SGFlags> {
-        let (bytes, flags) = nom::number::complete::le_u32(bytes)?;
-        Ok((bytes, SGFlags::from_bits_truncate(flags)))
-    }
-}
-
-bitflags::bitflags! {
-    #[repr(transparent)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct SectionAttributes: u32 {
-        const S_ATTR_PURE_INSTRUCTIONS = 0x80000000;
-        const S_ATTR_NO_TOC = 0x40000000;
-        const S_ATTR_STRIP_STATIC_SYMS = 0x20000000;
-        const S_ATTR_NO_DEAD_STRIP = 0x10000000;
-        const S_ATTR_LIVE_SUPPORT = 0x08000000;
-        const S_ATTR_SELF_MODIFYING_CODE = 0x04000000;
-        const S_ATTR_DEBUG = 0x02000000;
-        const S_ATTR_SOME_INSTRUCTIONS = 0x00000400;
-        const S_ATTR_EXT_RELOC = 0x00000200;
-        const S_ATTR_LOC_RELOC = 0x00000100;
-    }
-}
-
-impl SectionAttributes {
-    pub const SECTION_ATTRIBUTES_USR_MASK: u32 = 0xff000000;
-    pub const SECTION_ATTRIBUTES_SYS_MASK: u32 = 0x00ffff00;
-    pub const SECTION_ATTRIBUTES_MASK: u32 = SectionAttributes::SECTION_ATTRIBUTES_USR_MASK
-        | SectionAttributes::SECTION_ATTRIBUTES_SYS_MASK;
-
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], SectionAttributes> {
-        let (bytes, secattrs) = nom::number::complete::le_u32(bytes)?;
-        Ok((
-            bytes,
-            SectionAttributes::from_bits_truncate(secattrs & Self::SECTION_ATTRIBUTES_MASK),
-        ))
-    }
-}
-
-bitflags::bitflags! {
-    #[repr(transparent)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Protection: u32 {
-        const NONE = 0x00;
-        const READ = 0x01;
-        const WRITE = 0x02;
-        const EXECUTE = 0x04;
-    }
-}
-
-impl Protection {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Protection> {
-        let (bytes, prot) = nom::number::complete::le_u32(bytes)?;
-        Ok((bytes, Protection::from_bits_truncate(prot)))
-    }
-}
 bitflags::bitflags! {
     #[repr(transparent)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
