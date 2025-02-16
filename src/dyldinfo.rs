@@ -543,10 +543,118 @@ impl DyldChainedFixupsHeader {
 }
 
 #[derive(Debug)]
+pub struct DyldStartsInSegment {
+    size: u32,
+    page_size: u16,
+    pointer_format: DyldPointerFormat,
+    segment_offset: u64,
+    max_valid_pointer: u32,
+    page_count: u16,
+    page_start: Vec<u16>,
+}
+
+impl DyldStartsInSegment {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldStartsInSegment> {
+        println!("{:?}", bytes);
+        let (bytes, size) = nom::number::complete::le_u32(bytes)?;
+        println!("{}", size);
+        let (bytes, page_size) = nom::number::complete::le_u16(bytes)?;
+        println!("{}", page_size);
+        let (bytes, pointer_format) = DyldPointerFormat::parse(bytes)?;
+        println!("{:?}", pointer_format);
+        let (bytes, segment_offset) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, max_valid_pointer) = nom::number::complete::le_u32(bytes)?;
+        let (bytes, page_count) = nom::number::complete::le_u16(bytes)?;
+        let (bytes, page_start) =
+            nom::multi::count(nom::number::complete::le_u16, page_count as usize).parse(bytes)?;
+
+        Ok((
+            bytes,
+            DyldStartsInSegment {
+                size,
+                page_size,
+                pointer_format,
+                segment_offset,
+                max_valid_pointer,
+                page_count,
+                page_start,
+            },
+        ))
+    }
+}
+
+#[derive(Debug)]
+pub struct DyldStartsInImage {
+    pub seg_count: u32,
+    pub seg_info_offset: Vec<u32>,
+    pub seg_starts: Vec<DyldStartsInSegment>,
+}
+
+impl DyldStartsInImage {
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldStartsInImage> {
+        let (cursor, seg_count) = nom::number::complete::le_u32(bytes)?;
+        let (_, seg_info_offset) =
+            nom::multi::count(nom::number::complete::le_u32, seg_count as usize).parse(cursor)?;
+
+        let mut seg_starts = vec![];
+        for offset in &seg_info_offset {
+            // if the offset == 0 then there's no fixups for this segment... skip
+            if *offset == 0 {
+                continue;
+            }
+            println!("{:?}", offset);
+            let (_, seg_start) = DyldStartsInSegment::parse(&bytes[*offset as usize..])?;
+            seg_starts.push(seg_start);
+        }
+
+        Ok((
+            cursor,
+            DyldStartsInImage {
+                seg_count,
+                seg_info_offset,
+                seg_starts,
+            },
+        ))
+    }
+}
+
+#[derive(Debug, FromPrimitive)]
+pub enum DyldPointerFormat {
+    Arm64e = 1,
+    Ptr64 = 2,
+    Ptr32 = 3,
+    Ptr32Cache = 4,
+    Ptr32Firmware = 5,
+    Ptr64Offset = 6,
+    Arm64eKernel = 7,
+    Ptr64KernelCache = 8,
+    Arm64eUserland = 9,
+    Arm64eFirmware = 10,
+    X86_64KernelCache = 11,
+    Arm64eUserland24 = 12,
+    Arm64eSharedCache = 13,
+}
+
+impl DyldPointerFormat {
+    pub const DYLD_POINTER_MASK: u32 = 0xFF;
+    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldPointerFormat> {
+        let (bytes, value) = nom::number::complete::le_u32(bytes)?;
+        match num::FromPrimitive::from_u32(value & Self::DYLD_POINTER_MASK) {
+            Some(format) => Ok((bytes, format)),
+            None => Err(nom::Err::Failure(nom::error::Error::new(
+                bytes,
+                nom::error::ErrorKind::Tag,
+            ))),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct DyldChainedFixupCommand {
     pub cmd: LinkeditDataCommand,
     pub header: DyldChainedFixupsHeader,
     pub imports: Vec<DyldChainedImport>,
+    pub starts: DyldStartsInImage,
 }
 
 impl LoadCommand for DyldChainedFixupCommand {
@@ -559,12 +667,13 @@ impl LoadCommand for DyldChainedFixupCommand {
         let (bytes, cmd) = LinkeditDataCommand::parse(bytes, base, header, all)?;
         let blob = &all[cmd.dataoff as usize..cmd.dataoff as usize + cmd.datasize as usize];
         let (_, header) = DyldChainedFixupsHeader::parse(blob)?;
-        println!("{:?}", &blob[header.imports_offset as usize..]);
         let (_, imports) = nom::multi::count(
             |cursor| DyldChainedImport::parse(cursor, &blob[header.symbols_offset as usize..]),
             header.imports_count as usize,
         )
         .parse(&blob[header.imports_offset as usize..])?;
+
+        let (_, starts) = DyldStartsInImage::parse(&blob[header.starts_offset as usize..])?;
 
         Ok((
             bytes,
@@ -572,6 +681,7 @@ impl LoadCommand for DyldChainedFixupCommand {
                 cmd,
                 header,
                 imports,
+                starts,
             },
         ))
     }
