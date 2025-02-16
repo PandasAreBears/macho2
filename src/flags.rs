@@ -63,24 +63,6 @@ impl LCLoadCommand {
     pub const LC_REQ_DYLD: u32 = 0x80000000;
 }
 
-bitflags::bitflags! {
-    #[repr(transparent)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct DylibUseFlags: u32 {
-        const WEAK_LINK = 0x01;
-        const REEXPORT = 0x02;
-        const UPWARD = 0x04;
-        const DELAYED_INIT = 0x08;
-    }
-}
-
-impl DylibUseFlags {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DylibUseFlags> {
-        let (bytes, flags) = nom::number::complete::le_u32(bytes)?;
-        Ok((bytes, DylibUseFlags::from_bits_truncate(flags)))
-    }
-}
-
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Nom, EnumString, Display)]
 pub enum Tool {

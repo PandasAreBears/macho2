@@ -1,5 +1,6 @@
 pub mod codesign;
 pub mod dyldinfo;
+pub mod dylib;
 pub mod fat;
 pub mod flags;
 pub mod header;
@@ -10,17 +11,19 @@ pub mod segment;
 
 use codesign::CodeSignCommand;
 use dyldinfo::DyldChainedFixupCommand;
+use dylib::{
+    DylibCommand, DylinkerCommand, PreboundDylibCommand, SubClientCommand, SubFrameworkCommand,
+    SubLibraryCommand, SubUmbrellaCommand,
+};
 use fat::{FatArch, FatHeader};
 use flags::{FatMagic, LCLoadCommand};
 use header::{MHMagic, MachHeader};
 use load_command::{
-    BuildVersionCommand, DyldInfoCommand, DylibCommand, DylinkerCommand, DysymtabCommand,
-    EncryptionInfoCommand, EncryptionInfoCommand64, EntryPointCommand, FilesetEntryCommand,
-    FunctionStartsCommand, LinkeditDataCommand, LinkerOptionCommand, NoteCommand,
-    PrebindCksumCommand, PreboundDylibCommand, RoutinesCommand64, RpathCommand,
-    SourceVersionCommand, SubClientCommand, SubFrameworkCommand, SubLibraryCommand,
-    SubUmbrellaCommand, SymsegCommand, SymtabCommand, ThreadCommand, TwoLevelHintsCommand,
-    UuidCommand, VersionMinCommand,
+    BuildVersionCommand, DyldInfoCommand, DysymtabCommand, EncryptionInfoCommand,
+    EncryptionInfoCommand64, EntryPointCommand, FilesetEntryCommand, FunctionStartsCommand,
+    LinkeditDataCommand, LinkerOptionCommand, NoteCommand, PrebindCksumCommand, RoutinesCommand64,
+    RpathCommand, SourceVersionCommand, SymsegCommand, SymtabCommand, ThreadCommand,
+    TwoLevelHintsCommand, UuidCommand, VersionMinCommand,
 };
 
 use load_command::LoadCommand as IOnlyNeedThisForTheTrait;
