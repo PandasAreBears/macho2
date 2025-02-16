@@ -554,15 +554,30 @@ pub struct DyldStartsInSegment {
 }
 
 impl DyldStartsInSegment {
+    pub const DYLD_CHAINED_PTR_START_NONE: u16 = 0xffff;
+    pub const DYLD_CHAINED_PTR_START_MULTI: u16 = 0x8000;
+
     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldStartsInSegment> {
         let (bytes, size) = nom::number::complete::le_u32(bytes)?;
         let (bytes, page_size) = nom::number::complete::le_u16(bytes)?;
         let (bytes, pointer_format) = DyldPointerFormat::parse(bytes)?;
         let (bytes, segment_offset) = nom::number::complete::le_u64(bytes)?;
         let (bytes, max_valid_pointer) = nom::number::complete::le_u32(bytes)?;
-        let (bytes, page_count) = nom::number::complete::le_u16(bytes)?;
-        let (bytes, page_start) =
-            nom::multi::count(nom::number::complete::le_u16, page_count as usize).parse(bytes)?;
+        let (mut bytes, page_count) = nom::number::complete::le_u16(bytes)?;
+
+        let mut page_start = vec![];
+        for _ in 0..page_count {
+            let (cursor, start) = nom::number::complete::le_u16::<_, Error<_>>(bytes).unwrap();
+            bytes = cursor;
+            if Self::DYLD_CHAINED_PTR_START_NONE & start > 0 {
+                break;
+            }
+            if Self::DYLD_CHAINED_PTR_START_MULTI & start > 0 {
+                println!("DYLD_CHAINED_PTR_START_MULTI hit. TODO: idk what to do here.");
+                break;
+            }
+            page_start.push(start);
+        }
 
         Ok((
             bytes,
