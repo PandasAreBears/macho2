@@ -12,20 +12,6 @@ pub fn string_upto_null_terminator(bytes: &[u8]) -> nom::IResult<&[u8], String> 
     Ok((&bytes[1..], name))
 }
 
-pub fn string_upto_null_terminator_many(bytes: &[u8]) -> nom::IResult<&[u8], Vec<String>> {
-    let mut strings = Vec::new();
-    let mut remaining_bytes = bytes;
-    loop {
-        let (bytes, name) = string_upto_null_terminator(remaining_bytes)?;
-        strings.push(name);
-        if bytes.is_empty() {
-            break;
-        }
-        remaining_bytes = bytes;
-    }
-    Ok((&[], strings))
-}
-
 pub fn version_string(version: u32) -> String {
     format!(
         "{}.{}.{}",

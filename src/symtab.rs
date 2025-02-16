@@ -1,10 +1,9 @@
 use num_derive::FromPrimitive;
 
 use crate::{
-    flags::LCLoadCommand,
     header::MachHeader,
     helpers::string_upto_null_terminator,
-    load_command::{LoadCommand, LoadCommandBase},
+    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]

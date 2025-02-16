@@ -1,5 +1,4 @@
-use macho2::{FatMachO, MachO};
-
+use macho2::macho::{FatMachO, LoadCommand, MachO};
 use std::{
     env,
     fs::File,
@@ -28,6 +27,7 @@ fn main() {
         return;
     }
 
+    println!("File: {}", file_path);
     let macho: MachO = if FatMachO::is_fat_magic(&buffer) {
         let fat_macho = FatMachO::parse(&buffer).unwrap();
         println!("This is a fat macho file. Please select an architecture:");
@@ -56,13 +56,13 @@ fn main() {
         return;
     };
 
-    println!("{:#?}", macho.header);
+    // println!("{:#?}", macho.header);
 
     macho
         .load_commands
         .iter()
         .filter(|lc| match lc {
-            macho2::LoadCommand::CodeSignature(_) => true,
+            LoadCommand::LoadDylib(_) => true,
             _ => false,
         })
         .for_each(|f| {

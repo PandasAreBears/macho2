@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use nom::{error::Error, Parser};
 use num_derive::FromPrimitive;
 
@@ -7,7 +5,7 @@ use crate::{
     commands::LinkeditDataCommand,
     header::MachHeader,
     helpers::{read_sleb, read_uleb, string_upto_null_terminator},
-    load_command::{LoadCommand, LoadCommandBase},
+    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase},
 };
 
 #[derive(Debug, FromPrimitive, Clone, Copy)]
@@ -371,11 +369,11 @@ impl DyldExportSymbolFlags {
 
 #[derive(Debug)]
 pub struct DyldExport {
-    flags: DyldExportSymbolFlags,
-    address: u64,
-    name: String,
-    ordinal: Option<u32>,
-    import_name: Option<String>,
+    pub flags: DyldExportSymbolFlags,
+    pub address: u64,
+    pub name: String,
+    pub ordinal: Option<u32>,
+    pub import_name: Option<String>,
 }
 
 impl DyldExport {
@@ -472,9 +470,9 @@ impl DyldImportFormat {
 
 #[derive(Debug)]
 pub struct DyldChainedImport {
-    ordinal: u8,
-    is_weak: bool,
-    name: String,
+    pub ordinal: u8,
+    pub is_weak: bool,
+    pub name: String,
 }
 
 impl DyldChainedImport {
@@ -546,13 +544,13 @@ impl DyldChainedFixupsHeader {
 
 #[derive(Debug)]
 pub struct DyldStartsInSegment {
-    size: u32,
-    page_size: u16,
-    pointer_format: DyldPointerFormat,
-    segment_offset: u64,
-    max_valid_pointer: u32,
-    page_count: u16,
-    page_start: Vec<u16>,
+    pub size: u32,
+    pub page_size: u16,
+    pub pointer_format: DyldPointerFormat,
+    pub segment_offset: u64,
+    pub max_valid_pointer: u32,
+    pub page_count: u16,
+    pub page_start: Vec<u16>,
 }
 
 impl DyldStartsInSegment {
@@ -679,6 +677,92 @@ impl LoadCommand for DyldChainedFixupCommand {
                 header,
                 imports,
                 starts,
+            },
+        ))
+    }
+}
+
+#[derive(Debug)]
+pub struct DyldInfoCommand {
+    pub cmd: LCLoadCommand,
+    pub cmdsize: u32,
+    pub rebase_off: u32,
+    pub rebase_size: u32,
+    pub bind_off: u32,
+    pub bind_size: u32,
+    pub weak_bind_off: u32,
+    pub weak_bind_size: u32,
+    pub lazy_bind_off: u32,
+    pub lazy_bind_size: u32,
+    pub export_off: u32,
+    pub export_size: u32,
+
+    pub rebase_instructions: Vec<RebaseInstruction>,
+    pub bind_instructions: Vec<BindInstruction>,
+    pub weak_instructions: Vec<BindInstruction>,
+    pub lazy_instructions: Vec<BindInstruction>,
+    pub exports: Vec<DyldExport>,
+}
+
+impl LoadCommand for DyldInfoCommand {
+    fn parse<'a>(
+        bytes: &'a [u8],
+        base: LoadCommandBase,
+        _: MachHeader,
+        all: &'a [u8],
+    ) -> nom::IResult<&'a [u8], Self> {
+        let end = &bytes[base.cmdsize as usize..];
+
+        let (cursor, _) = LoadCommandBase::skip(bytes)?;
+        let (cursor, rebase_off) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, rebase_size) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, bind_off) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, bind_size) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, weak_bind_off) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, weak_bind_size) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, lazy_bind_off) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, lazy_bind_size) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, export_off) = nom::number::complete::le_u32(cursor)?;
+        let (_, export_size) = nom::number::complete::le_u32(cursor)?;
+
+        let (_, rebase_instructions) = RebaseInstruction::parse(
+            &all[rebase_off as usize..(rebase_off + rebase_size) as usize],
+        )?;
+
+        let (_, bind_instructions) =
+            BindInstruction::parse(&all[bind_off as usize..(bind_off + bind_size) as usize])?;
+
+        let (_, weak_instructions) = BindInstruction::parse(
+            &all[weak_bind_off as usize..(weak_bind_off + weak_bind_size) as usize],
+        )?;
+
+        let (_, lazy_instructions) = BindInstruction::parse(
+            &all[lazy_bind_off as usize..(lazy_bind_off + lazy_bind_size) as usize],
+        )?;
+
+        let (_, exports) =
+            DyldExport::parse(&all[export_off as usize..(export_off + export_size) as usize])?;
+
+        Ok((
+            end,
+            DyldInfoCommand {
+                cmd: base.cmd,
+                cmdsize: base.cmdsize,
+                rebase_off,
+                rebase_size,
+                bind_off,
+                bind_size,
+                weak_bind_off,
+                weak_bind_size,
+                lazy_bind_off,
+                lazy_bind_size,
+                export_off,
+                export_size,
+                rebase_instructions,
+                bind_instructions,
+                weak_instructions,
+                lazy_instructions,
+                exports,
             },
         ))
     }

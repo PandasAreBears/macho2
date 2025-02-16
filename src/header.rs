@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use nom::{sequence::tuple, IResult};
 use nom_derive::{Nom, Parse};
 

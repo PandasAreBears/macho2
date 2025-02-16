@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use nom::Parser;
 use num_derive::FromPrimitive;
 use strum_macros::Display;

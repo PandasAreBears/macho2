@@ -1,9 +1,13 @@
-#![allow(dead_code)]
-
-use crate::flags::FatMagic;
 use crate::machine::{CpuSubType, CpuType};
 use nom;
-use nom_derive::Parse;
+use nom_derive::{Nom, Parse};
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Nom)]
+pub enum FatMagic {
+    Fat = 0xcafebabe,
+    Fat64 = 0xcafebabf,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct FatHeader {

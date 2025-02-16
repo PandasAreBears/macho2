@@ -4,7 +4,7 @@ use std::{
     io::{stdout, Read, Write},
 };
 
-use macho2::FatMachO;
+use macho2::macho::FatMachO;
 
 fn main() {
     let args: Vec<String> = env::args().collect();

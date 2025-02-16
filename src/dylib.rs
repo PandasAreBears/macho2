@@ -1,8 +1,7 @@
 use crate::{
-    flags::LCLoadCommand,
     header::MachHeader,
     helpers::{string_upto_null_terminator, version_string},
-    load_command::{LoadCommand, LoadCommandBase},
+    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase},
 };
 
 bitflags::bitflags! {
