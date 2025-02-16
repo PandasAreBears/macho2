@@ -3,6 +3,7 @@ use num_derive::FromPrimitive;
 use crate::{
     flags::LCLoadCommand,
     header::MachHeader,
+    helpers::string_upto_null_terminator,
     load_command::{LoadCommand, LoadCommandBase},
 };
 
@@ -137,9 +138,9 @@ pub struct Section32 {
 impl Section32 {
     pub fn parse<'a>(bytes: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
         let (bytes, sectname_bytes) = nom::bytes::complete::take(16usize)(bytes)?;
-        let (_, sectname) = LoadCommandBase::string_upto_null_terminator(sectname_bytes)?;
+        let (_, sectname) = string_upto_null_terminator(sectname_bytes)?;
         let (bytes, segname_bytes) = nom::bytes::complete::take(16usize)(bytes)?;
-        let (_, segname) = LoadCommandBase::string_upto_null_terminator(segname_bytes)?;
+        let (_, segname) = string_upto_null_terminator(segname_bytes)?;
 
         let (bytes, (addr, size, offset, align, reloff, nreloc)) = nom::sequence::tuple((
             nom::number::complete::le_u32,
@@ -199,9 +200,9 @@ pub struct Section64 {
 impl Section64 {
     pub fn parse<'a>(bytes: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
         let (bytes, sectname) = nom::bytes::complete::take(16usize)(bytes)?;
-        let (_, sectname) = LoadCommandBase::string_upto_null_terminator(sectname)?;
+        let (_, sectname) = string_upto_null_terminator(sectname)?;
         let (bytes, segname) = nom::bytes::complete::take(16usize)(bytes)?;
-        let (_, segname) = LoadCommandBase::string_upto_null_terminator(segname)?;
+        let (_, segname) = string_upto_null_terminator(segname)?;
 
         let (bytes, (addr, size, offset, align, reloff, nreloc)) = nom::sequence::tuple((
             nom::number::complete::le_u64,
@@ -269,7 +270,7 @@ impl LoadCommand for SegmentCommand32 {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, segname) = nom::bytes::complete::take(16usize)(cursor)?;
-        let (_, segname) = LoadCommandBase::string_upto_null_terminator(segname)?;
+        let (_, segname) = string_upto_null_terminator(segname)?;
 
         let (cursor, (vmaddr, vmsize, fileoff, filesize)) = nom::sequence::tuple((
             nom::number::complete::le_u32,
@@ -334,7 +335,7 @@ impl LoadCommand for SegmentCommand64 {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (cursor, segname) = nom::bytes::complete::take(16usize)(cursor)?;
-        let (_, segname) = LoadCommandBase::string_upto_null_terminator(segname)?;
+        let (_, segname) = string_upto_null_terminator(segname)?;
 
         let (cursor, (vmaddr, vmsize, fileoff, filesize)) = nom::sequence::tuple((
             nom::number::complete::le_u64,

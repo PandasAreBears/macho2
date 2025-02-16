@@ -4,6 +4,7 @@ use crate::{
     dyldinfo::{BindInstruction, DyldExport, RebaseInstruction},
     flags::{DylibUseFlags, LCLoadCommand, NlistReferenceType, NlistTypeType, Platform, Tool},
     header::MachHeader,
+    helpers::{string_upto_null_terminator, version_string},
     machine::{ThreadState, ThreadStateBase},
 };
 use nom_derive::Parse;
@@ -26,41 +27,6 @@ impl LoadCommandBase {
     pub fn skip(bytes: &[u8]) -> nom::IResult<&[u8], ()> {
         let (remaining, _) = nom::bytes::complete::take(8usize)(bytes)?;
         Ok((remaining, ()))
-    }
-
-    fn version_string(version: u32) -> String {
-        format!(
-            "{}.{}.{}",
-            (version >> 16) & 0xff,
-            (version >> 8) & 0xff,
-            version & 0xff
-        )
-    }
-
-    pub fn string_upto_null_terminator(bytes: &[u8]) -> nom::IResult<&[u8], String> {
-        let (bytes, name_bytes) =
-            match nom::bytes::complete::take_until::<&str, &[u8], nom::error::Error<&[u8]>>("\0")(
-                bytes,
-            ) {
-                Ok((bytes, name_bytes)) => (bytes, name_bytes),
-                Err(_) => return Ok((&[], String::from_utf8(bytes.to_vec()).unwrap())),
-            };
-        let name = String::from_utf8(name_bytes.to_vec()).unwrap();
-        Ok((&bytes[1..], name))
-    }
-
-    fn string_upto_null_terminator_many(bytes: &[u8]) -> nom::IResult<&[u8], Vec<String>> {
-        let mut strings = Vec::new();
-        let mut remaining_bytes = bytes;
-        loop {
-            let (bytes, name) = LoadCommandBase::string_upto_null_terminator(remaining_bytes)?;
-            strings.push(name);
-            if bytes.is_empty() {
-                break;
-            }
-            remaining_bytes = bytes;
-        }
-        Ok((&[], strings))
     }
 }
 
@@ -129,8 +95,7 @@ impl LoadCommand for DylibCommand {
         let (cursor, timestamp) = nom::number::complete::le_u32(cursor)?;
         let (_, current_version) = nom::number::complete::le_u32(cursor)?;
         let (_, compatibility_version) = nom::number::complete::le_u32(cursor)?;
-        let (_, name) =
-            LoadCommandBase::string_upto_null_terminator(&bytes[name_offset as usize..])?;
+        let (_, name) = string_upto_null_terminator(&bytes[name_offset as usize..])?;
 
         Ok((
             end,
@@ -139,8 +104,8 @@ impl LoadCommand for DylibCommand {
                 cmdsize: base.cmdsize,
                 name,
                 timestamp,
-                current_version: LoadCommandBase::version_string(current_version),
-                compatibility_version: LoadCommandBase::version_string(compatibility_version),
+                current_version: version_string(current_version),
+                compatibility_version: version_string(compatibility_version),
             },
         ))
     }
@@ -204,8 +169,7 @@ impl LoadCommand for SubFrameworkCommand {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, umbrella_offset) = nom::number::complete::le_u32(cursor)?;
-        let (_, umbrella) =
-            LoadCommandBase::string_upto_null_terminator(&bytes[umbrella_offset as usize..])?;
+        let (_, umbrella) = string_upto_null_terminator(&bytes[umbrella_offset as usize..])?;
 
         Ok((
             end,
@@ -235,8 +199,7 @@ impl LoadCommand for SubClientCommand {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, client_offset) = nom::number::complete::le_u32(cursor)?;
-        let (_, client) =
-            LoadCommandBase::string_upto_null_terminator(&bytes[client_offset as usize..])?;
+        let (_, client) = string_upto_null_terminator(&bytes[client_offset as usize..])?;
 
         Ok((
             end,
@@ -267,7 +230,7 @@ impl LoadCommand for SubUmbrellaCommand {
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, sub_umbrella_offset) = nom::number::complete::le_u32(cursor)?;
         let (_, sub_umbrella) =
-            LoadCommandBase::string_upto_null_terminator(&bytes[sub_umbrella_offset as usize..])?;
+            string_upto_null_terminator(&bytes[sub_umbrella_offset as usize..])?;
 
         Ok((
             end,
@@ -297,8 +260,7 @@ impl LoadCommand for SubLibraryCommand {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, sub_library_offset) = nom::number::complete::le_u32(cursor)?;
-        let (_, sub_library) =
-            LoadCommandBase::string_upto_null_terminator(&bytes[sub_library_offset as usize..])?;
+        let (_, sub_library) = string_upto_null_terminator(&bytes[sub_library_offset as usize..])?;
 
         Ok((
             end,
@@ -332,11 +294,11 @@ impl LoadCommand for PreboundDylibCommand {
         let (_, name_offset) = nom::number::complete::le_u32(cursor)?;
         let (cursor, nmodules) = nom::number::complete::le_u32(cursor)?;
         let (_, linked_modules_offset) = nom::number::complete::le_u32(cursor)?;
-        let (_, name) = LoadCommandBase::string_upto_null_terminator(
+        let (_, name) = string_upto_null_terminator(
             &bytes[name_offset as usize..linked_modules_offset as usize],
         )?;
         let (_, linked_modules) =
-            LoadCommandBase::string_upto_null_terminator(&bytes[linked_modules_offset as usize..])?;
+            string_upto_null_terminator(&bytes[linked_modules_offset as usize..])?;
 
         Ok((
             end,
@@ -368,8 +330,7 @@ impl LoadCommand for DylinkerCommand {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, name_offset) = nom::number::complete::le_u32(cursor)?;
-        let (_, name) =
-            LoadCommandBase::string_upto_null_terminator(&bytes[name_offset as usize..])?;
+        let (_, name) = string_upto_null_terminator(&bytes[name_offset as usize..])?;
 
         Ok((
             end,
@@ -546,7 +507,7 @@ pub struct Nlist64 {
 impl Nlist64 {
     pub fn parse<'a>(bytes: &'a [u8], strings: &[u8]) -> nom::IResult<&'a [u8], Self> {
         let (cursor, n_strx) = nom::number::complete::le_u32(bytes)?;
-        let n_strx = LoadCommandBase::string_upto_null_terminator(&strings[n_strx as usize..])
+        let n_strx = string_upto_null_terminator(&strings[n_strx as usize..])
             .unwrap()
             .1;
         let (cursor, n_type) = NlistType::parse(cursor)?;
@@ -857,8 +818,7 @@ impl LoadCommand for RpathCommand {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
         let (_, path_offset) = nom::number::complete::le_u32(cursor)?;
-        let (_, path) =
-            LoadCommandBase::string_upto_null_terminator(&bytes[path_offset as usize..])?;
+        let (_, path) = string_upto_null_terminator(&bytes[path_offset as usize..])?;
 
         Ok((
             end,
@@ -1118,8 +1078,8 @@ impl LoadCommand for VersionMinCommand {
             VersionMinCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
-                version: LoadCommandBase::version_string(version),
-                sdk: LoadCommandBase::version_string(sdk),
+                version: version_string(version),
+                sdk: version_string(sdk),
             },
         ))
     }
@@ -1140,7 +1100,7 @@ impl BuildToolVersion {
             bytes,
             BuildToolVersion {
                 tool,
-                version: LoadCommandBase::version_string(version),
+                version: version_string(version),
             },
         ))
     }
@@ -1185,8 +1145,8 @@ impl LoadCommand for BuildVersionCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
                 platform,
-                minos: LoadCommandBase::version_string(minos),
-                sdk: LoadCommandBase::version_string(sdk),
+                minos: version_string(minos),
+                sdk: version_string(sdk),
                 ntools,
                 tools,
             },
@@ -1305,7 +1265,7 @@ impl LoadCommand for LinkerOptionCommand {
 
         let mut strings = Vec::new();
         for _ in 0..count {
-            let (bytes, string) = LoadCommandBase::string_upto_null_terminator(remaining_bytes)?;
+            let (bytes, string) = string_upto_null_terminator(remaining_bytes)?;
             strings.push(string);
             remaining_bytes = bytes;
         }
@@ -1421,11 +1381,9 @@ impl LoadCommand for NoteCommand {
             NoteCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
-                data_owner: LoadCommandBase::string_upto_null_terminator(
-                    &bytes[data_owner_offset as usize..],
-                )
-                .unwrap()
-                .1,
+                data_owner: string_upto_null_terminator(&bytes[data_owner_offset as usize..])
+                    .unwrap()
+                    .1,
                 offset,
                 size,
             },
@@ -1465,11 +1423,9 @@ impl LoadCommand for FilesetEntryCommand {
                 cmdsize: base.cmdsize,
                 vmaddr,
                 fileoff,
-                entry_id: LoadCommandBase::string_upto_null_terminator(
-                    &bytes[entry_id_offset as usize..],
-                )
-                .unwrap()
-                .1,
+                entry_id: string_upto_null_terminator(&bytes[entry_id_offset as usize..])
+                    .unwrap()
+                    .1,
                 reserved,
             },
         ))

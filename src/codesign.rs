@@ -4,6 +4,7 @@ use num_derive::FromPrimitive;
 
 use crate::{
     header::MachHeader,
+    helpers::string_upto_null_terminator,
     load_command::{LinkeditDataCommand, LoadCommand, LoadCommandBase},
 };
 
@@ -408,11 +409,10 @@ impl CodeSignCodeDirectory {
             })
             .collect();
 
-        let identifier =
-            LoadCommandBase::string_upto_null_terminator(&bytes[ident_offset as usize..])
-                .unwrap()
-                .1
-                .to_string();
+        let identifier = string_upto_null_terminator(&bytes[ident_offset as usize..])
+            .unwrap()
+            .1
+            .to_string();
 
         Ok((
             bytes,

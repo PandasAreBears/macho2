@@ -5,6 +5,7 @@ use num_derive::FromPrimitive;
 
 use crate::{
     header::MachHeader,
+    helpers::string_upto_null_terminator,
     load_command::{read_sleb, read_uleb, LinkeditDataCommand, LoadCommand, LoadCommandBase},
 };
 
@@ -241,7 +242,7 @@ impl BindInstruction {
                 }
                 BindOpcode::SetSymbolTrailingFlagsImm => {
                     // symbol_flag = num::FromPrimitive::from_u8(immediate).unwrap(); // TODO: Do something with this?
-                    let (next, str) = LoadCommandBase::string_upto_null_terminator(cursor).unwrap();
+                    let (next, str) = string_upto_null_terminator(cursor).unwrap();
                     cursor = next;
                     symbol_name = str;
                 }
@@ -394,7 +395,7 @@ impl DyldExport {
                 let (next, ord) = read_uleb(p).unwrap();
                 p = next;
                 ordinal = Some(ord as u32);
-                let (_, str) = LoadCommandBase::string_upto_null_terminator(p).unwrap();
+                let (_, str) = string_upto_null_terminator(p).unwrap();
                 import_name = Some(str);
             } else {
                 let (next, addr) = read_uleb(p).unwrap();
@@ -417,7 +418,7 @@ impl DyldExport {
         p = &p[size as usize..];
         let (p, child_count) = nom::number::complete::le_u8::<_, Error<_>>(p).unwrap();
         for _ in 0..child_count {
-            let (next, cat_str) = LoadCommandBase::string_upto_null_terminator(p).unwrap();
+            let (next, cat_str) = string_upto_null_terminator(p).unwrap();
             let (_, child_off) = read_uleb(next).unwrap();
             DyldExport::parse_recursive(
                 all,
@@ -491,7 +492,7 @@ impl DyldChainedImport {
             + ((value & 0xFF00) >> 1)
             + ((value & 0xFF) << 15)) as usize;
 
-        let name = LoadCommandBase::string_upto_null_terminator(&symbols[name_offset as usize..])
+        let name = string_upto_null_terminator(&symbols[name_offset as usize..])
             .unwrap()
             .1;
 

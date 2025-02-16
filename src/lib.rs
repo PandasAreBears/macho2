@@ -3,6 +3,7 @@ pub mod dyldinfo;
 pub mod fat;
 pub mod flags;
 pub mod header;
+mod helpers;
 pub mod load_command;
 pub mod machine;
 pub mod segment;
