@@ -36,7 +36,6 @@ fn main() {
         return;
     }
 
-    println!("File: {}", file_path);
     let macho: MachO = if FatMachO::is_fat_magic(&buffer) {
         let fat_macho = FatMachO::parse(&buffer).unwrap();
         println!("This is a fat macho file. Please select an architecture:");

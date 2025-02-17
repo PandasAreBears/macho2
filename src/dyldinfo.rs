@@ -419,16 +419,17 @@ impl DyldExport {
         }
 
         p = &p[size as usize..];
-        let (p, child_count) = nom::number::complete::le_u8::<_, Error<_>>(p).unwrap();
+        let (mut p, child_count) = nom::number::complete::le_u8::<_, Error<_>>(p).unwrap();
         for _ in 0..child_count {
             let (next, cat_str) = string_upto_null_terminator(p).unwrap();
-            let (_, child_off) = read_uleb(next).unwrap();
+            let (next, child_off) = read_uleb(next).unwrap();
             DyldExport::parse_recursive(
                 all,
                 &all[child_off as usize..],
                 format!("{}{}", str, cat_str),
                 exports,
             );
+            p = next;
         }
     }
 }
