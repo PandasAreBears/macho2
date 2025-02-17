@@ -7,7 +7,7 @@ use crate::commands::{
     NoteCommand, PrebindCksumCommand, RoutinesCommand64, RpathCommand, SourceVersionCommand,
     SymsegCommand, ThreadCommand, TwoLevelHintsCommand, UuidCommand, VersionMinCommand,
 };
-use crate::dyldinfo::{DyldChainedFixupCommand, DyldInfoCommand};
+use crate::dyldinfo::{DyldChainedFixupCommand, DyldExportsTrie, DyldInfoCommand};
 use crate::dylib::{
     DylibCommand, DylinkerCommand, PreboundDylibCommand, SubClientCommand, SubFrameworkCommand,
     SubLibraryCommand, SubUmbrellaCommand,
@@ -69,7 +69,7 @@ pub enum LoadCommand {
     VersionMinWatchos(VersionMinCommand),
     Note(NoteCommand),
     BuildVersion(BuildVersionCommand),
-    DyldExportsTrie(LinkeditDataCommand),
+    DyldExportsTrie(DyldExportsTrie),
     DyldChainedFixups(DyldChainedFixupCommand),
     FilesetEntry(FilesetEntryCommand),
     AtomInfo(LinkeditDataCommand),
@@ -203,11 +203,14 @@ impl LoadCommand {
                     DyldChainedFixupCommand::parse(bytes, base, header, all).unwrap();
                 Ok((bytes, LoadCommand::DyldChainedFixups(cmd)))
             }
+            LCLoadCommand::LcDyldExportsTrie => {
+                let (bytes, cmd) = DyldExportsTrie::parse(bytes, base, header, all).unwrap();
+                Ok((bytes, LoadCommand::DyldExportsTrie(cmd)))
+            }
             LCLoadCommand::LcSegmentSplitInfo
             | LCLoadCommand::LcDataInCode
             | LCLoadCommand::LcDylibCodeSignDrs
             | LCLoadCommand::LcLinkerOptimizationHint
-            | LCLoadCommand::LcDyldExportsTrie
             | LCLoadCommand::LcAtomInfo => {
                 let (bytes, cmd) = LinkeditDataCommand::parse(bytes, base, header, all).unwrap();
                 match base.cmd {
@@ -220,9 +223,6 @@ impl LoadCommand {
                     }
                     LCLoadCommand::LcLinkerOptimizationHint => {
                         Ok((bytes, LoadCommand::LinkerOptimizationHint(cmd)))
-                    }
-                    LCLoadCommand::LcDyldExportsTrie => {
-                        Ok((bytes, LoadCommand::DyldExportsTrie(cmd)))
                     }
                     LCLoadCommand::LcAtomInfo => Ok((bytes, LoadCommand::AtomInfo(cmd))),
                     _ => unreachable!(),

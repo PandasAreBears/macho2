@@ -792,3 +792,22 @@ impl LoadCommand for DyldInfoCommand {
         ))
     }
 }
+
+#[derive(Debug)]
+pub struct DyldExportsTrie {
+    pub cmd: LinkeditDataCommand,
+    pub exports: Vec<DyldExport>,
+}
+
+impl LoadCommand for DyldExportsTrie {
+    fn parse<'a>(
+        bytes: &'a [u8],
+        base: LoadCommandBase,
+        header: MachHeader,
+        all: &'a [u8],
+    ) -> nom::IResult<&'a [u8], Self> {
+        let (bytes, cmd) = LinkeditDataCommand::parse(bytes, base, header, all)?;
+        let (_, exports) = DyldExport::parse(&all[cmd.dataoff as usize..])?;
+        Ok((bytes, DyldExportsTrie { cmd, exports }))
+    }
+}
