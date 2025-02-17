@@ -159,7 +159,6 @@ pub enum MachHeader {
 impl MachHeader {
     pub fn parse(bytes: &[u8]) -> IResult<&[u8], MachHeader> {
         let (_, magic) = MHMagic::parse_le(bytes)?;
-        println!("magic: {:?}", magic);
 
         match magic {
             MHMagic::MhMagic => {

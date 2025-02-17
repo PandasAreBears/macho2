@@ -2,7 +2,7 @@
 name = "macho2"
 description = "A better MachO parser library"
 license = "GPL-3.0"
-version = "0.1.4"
+version = "0.1.5"
 homepage = "https://github.com/PandasAreBears/macho2"
 documentation = "https://docs.rs/macho2/latest/macho2/"
 edition = "2021"

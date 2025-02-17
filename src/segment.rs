@@ -28,11 +28,11 @@ bitflags::bitflags! {
     #[repr(transparent)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct SGFlags: u32 {
-        const SG_HIGHVM = 0x1;
-        const SG_FVMLIB = 0x2;
-        const SG_NORELOC = 0x4;
-        const SG_PROTECTED_VERSION_1 = 0x8;
-        const SG_READ_ONLY = 0x10;
+        const HIGHVM = 0x1;
+        const FVMLIB = 0x2;
+        const NORELOC = 0x4;
+        const PROTECTED_VERSION_1 = 0x8;
+        const READ_ONLY = 0x10;
     }
 }
 
@@ -90,16 +90,16 @@ bitflags::bitflags! {
     #[repr(transparent)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct SectionAttributes: u32 {
-        const S_ATTR_PURE_INSTRUCTIONS = 0x80000000;
-        const S_ATTR_NO_TOC = 0x40000000;
-        const S_ATTR_STRIP_STATIC_SYMS = 0x20000000;
-        const S_ATTR_NO_DEAD_STRIP = 0x10000000;
-        const S_ATTR_LIVE_SUPPORT = 0x08000000;
-        const S_ATTR_SELF_MODIFYING_CODE = 0x04000000;
-        const S_ATTR_DEBUG = 0x02000000;
-        const S_ATTR_SOME_INSTRUCTIONS = 0x00000400;
-        const S_ATTR_EXT_RELOC = 0x00000200;
-        const S_ATTR_LOC_RELOC = 0x00000100;
+        const PURE_INSTRUCTIONS = 0x80000000;
+        const NO_TOC = 0x40000000;
+        const STRIP_STATIC_SYMS = 0x20000000;
+        const NO_DEAD_STRIP = 0x10000000;
+        const LIVE_SUPPORT = 0x08000000;
+        const SELF_MODIFYING_CODE = 0x04000000;
+        const DEBUG = 0x02000000;
+        const SOME_INSTRUCTIONS = 0x00000400;
+        const EXT_RELOC = 0x00000200;
+        const LOC_RELOC = 0x00000100;
     }
 }
 

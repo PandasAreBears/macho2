@@ -14,7 +14,6 @@ A better parser for the MachO file format.
 
 ## TODO
 
-- [ ] Parse exports trie in LC_DYLD_EXPORTS_TRIE
 - [ ] Parse CMS signature in LC_CODE_SIGNATURE
 - [ ] Walk the chained fixups, and resolve library ordinals across several load commands
 - [ ] Make the tools more user-friendly, and make more tools
