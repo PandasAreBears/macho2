@@ -10,5 +10,6 @@ mod helpers;
 pub mod load_command;
 pub mod machine;
 pub mod macho;
+pub mod objc;
 pub mod segment;
 pub mod symtab;
