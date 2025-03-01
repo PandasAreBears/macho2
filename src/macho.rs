@@ -1,3 +1,4 @@
+use std::error;
 use std::io::{Read, Seek, SeekFrom};
 
 use crate::codesign::CodeSignCommand;
@@ -20,6 +21,21 @@ use crate::load_command::{self, LCLoadCommand, LoadCommand as IOnlyNeedThisForTh
 use crate::machine;
 use crate::segment::{SegmentCommand32, SegmentCommand64};
 use crate::symtab::{DysymtabCommand, SymtabCommand};
+use std::fmt;
+
+#[derive(Debug)]
+pub struct MachOErr {
+    pub detail: String,
+}
+
+impl fmt::Display for MachOErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "MachO Error")
+    }
+}
+impl error::Error for MachOErr {}
+
+pub type MachOResult<T> = Result<T, MachOErr>;
 
 #[derive(Debug)]
 pub enum LoadCommand {
@@ -301,21 +317,24 @@ impl LoadCommand {
 pub struct MachO<T: Seek + Read> {
     pub header: MachHeader,
     pub load_commands: Vec<LoadCommand>,
-    buf: T, // Now owns the buffer
+    buf: T,
 }
 
 impl<T: Seek + Read> MachO<T> {
-    pub fn is_macho_magic(buf: &mut T) -> bool {
+    pub fn is_macho_magic(buf: &mut T) -> MachOResult<bool> {
         let mut magic: [u8; 4] = [0; 4];
-        buf.seek(SeekFrom::Start(0))
-            .expect("Unable to seek to start of file");
-        buf.read_exact(&mut magic)
-            .expect("Unable to read magic from file");
+        buf.seek(SeekFrom::Start(0)).map_err(|_| MachOErr {
+            detail: "Unable to seek to start of file".to_string(),
+        })?;
+        buf.read_exact(&mut magic).map_err(|_| MachOErr {
+            detail: "Unable to read magic from file".to_string(),
+        })?;
+
         let magic = u32::from_le_bytes(magic);
-        magic == MHMagic::MhMagic as u32 || magic == MHMagic::MhMagic64 as u32
+        Ok(magic == MHMagic::MhMagic as u32 || magic == MHMagic::MhMagic64 as u32)
     }
 
-    pub fn parse(mut buf: T) -> Result<Self, &'static str> {
+    pub fn parse(mut buf: T) -> MachOResult<Self> {
         let mut bytes = Vec::new();
         buf.seek(SeekFrom::Start(0))
             .expect("Unable to seek to start of file");
@@ -324,7 +343,7 @@ impl<T: Seek + Read> MachO<T> {
         let (mut cursor, header) = MachHeader::parse(&bytes).expect("Unable to parse MachHeader");
         let mut cmds = Vec::new();
         let mut symtab_cmd = None;
-        for _ in 0..header.ncmds() {
+        for i in 0..header.ncmds() {
             match LoadCommand::parse(cursor, header, &bytes, symtab_cmd.clone()) {
                 Ok((next, cmd)) => {
                     if let LoadCommand::Symtab(symtab) = &cmd {
@@ -334,7 +353,11 @@ impl<T: Seek + Read> MachO<T> {
                     cmds.push(cmd);
                     cursor = next;
                 }
-                Err(_) => return Err("Unable to parse LoadCommand"),
+                Err(_) => {
+                    return Err(MachOErr {
+                        detail: format!("Unable to parse LoadCommand index {}", i),
+                    })
+                }
             }
         }
 
@@ -353,22 +376,32 @@ pub struct FatMachO<'a, T: Seek + Read> {
 }
 
 impl<'a, T: Seek + Read> FatMachO<'a, T> {
-    pub fn is_fat_magic(buf: &'a mut T) -> bool {
+    pub fn is_fat_magic(buf: &'a mut T) -> MachOResult<bool> {
         let mut magic = [0; 4];
-        buf.seek(SeekFrom::Start(0))
-            .expect("Unable to seek to start of file");
-        buf.read_exact(&mut magic)
-            .expect("Unable to read magic from file");
+        buf.seek(SeekFrom::Start(0)).map_err(|_| MachOErr {
+            detail: "Unable to seek to start of file".to_string(),
+        })?;
+        buf.read_exact(&mut magic).map_err(|_| MachOErr {
+            detail: "Unable to read magic from file".to_string(),
+        })?;
         let magic = u32::from_be_bytes(magic);
-        magic == FatMagic::Fat as u32 || magic == FatMagic::Fat64 as u32
+        Ok(magic == FatMagic::Fat as u32 || magic == FatMagic::Fat64 as u32)
     }
 
-    pub fn parse(buf: &'a mut T) -> Result<Self, &'static str> {
+    pub fn parse(buf: &'a mut T) -> MachOResult<Self> {
         let mut bytes = Vec::new();
-        buf.seek(SeekFrom::Start(0))
-            .expect("Unable to seek to start of file");
-        buf.read_to_end(&mut bytes)
-            .expect("Unable to read file to end");
+        if let Err(_) = buf.seek(SeekFrom::Start(0)) {
+            return Err(MachOErr {
+                detail: "Unable to seek to start of file".to_string(),
+            });
+        }
+
+        if let Err(_) = buf.read_to_end(&mut bytes) {
+            return Err(MachOErr {
+                detail: "Unable to read file to end".to_string(),
+            });
+        }
+
         let (mut cursor, header) = FatHeader::parse(&bytes).expect("Unable to parse FatHeader");
         let mut archs = Vec::new();
         for _ in 0..header.nfat_arch {
@@ -380,7 +413,7 @@ impl<'a, T: Seek + Read> FatMachO<'a, T> {
         Ok(Self { header, archs, buf })
     }
 
-    pub fn macho(&'a mut self, cputype: machine::CpuType) -> MachO<FileSubset<'a, T>> {
+    pub fn macho(&'a mut self, cputype: machine::CpuType) -> MachOResult<MachO<FileSubset<'a, T>>> {
         let arch = self
             .archs
             .iter()
@@ -389,13 +422,21 @@ impl<'a, T: Seek + Read> FatMachO<'a, T> {
         let offset = arch.offset();
         let size = arch.size();
 
-        let mut partial = FileSubset::new(self.buf, offset, size).expect("Unable to create subset");
+        let mut partial = match FileSubset::new(self.buf, offset, size) {
+            Ok(subset) => subset,
+            Err(_) => {
+                return Err(MachOErr {
+                    detail: "Unable to create subset".to_string(),
+                })
+            }
+        };
 
-        if !MachO::is_macho_magic(&mut partial) {
-            // TODO: Should probably return a Result instead of exiting
-            panic!("Fat MachO slice is not a MachO 🤔");
+        if !MachO::is_macho_magic(&mut partial)? {
+            return Err(MachOErr {
+                detail: "Fat MachO slice is not a MachO".to_string(),
+            });
         }
 
-        MachO::parse(partial).unwrap()
+        Ok(MachO::parse(partial).unwrap())
     }
 }

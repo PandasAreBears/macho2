@@ -1,6 +1,6 @@
 use macho2::{
     header::MachHeader,
-    macho::{FatMachO, LoadCommand, MachO},
+    macho::{FatMachO, LoadCommand, MachO, MachOErr, MachOResult},
     segment::Protection,
 };
 use std::{
@@ -9,11 +9,11 @@ use std::{
     io::{stdout, Write},
 };
 
-fn main() {
+fn main() -> MachOResult<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("Usage: {} <file_path>", args[0]);
-        return;
+        return Ok(());
     }
 
     let file_path = &args[1];
@@ -21,11 +21,11 @@ fn main() {
         Ok(file) => file,
         Err(e) => {
             eprintln!("Failed to open file: {}", e);
-            return;
+            return Ok(());
         }
     };
 
-    if FatMachO::is_fat_magic(&mut file) {
+    if FatMachO::is_fat_magic(&mut file)? {
         let mut fat_macho = FatMachO::parse(&mut file).unwrap();
         println!("This is a fat macho file. Please select an architecture:");
         for (i, arch) in fat_macho.archs.iter().enumerate() {
@@ -45,17 +45,25 @@ fn main() {
                 ),
             }
         };
-        let macho = fat_macho.macho(fat_macho.archs[index].cputype());
+        let macho = fat_macho
+            .macho(fat_macho.archs[index].cputype())
+            .map_err(|e| {
+                panic!("Failed to extract Mach-O: {}", e);
+            })
+            .unwrap();
         print_header(macho.header);
         print_load_commands(macho.load_commands);
-    } else if MachO::is_macho_magic(&mut file) {
+    } else if MachO::is_macho_magic(&mut file)? {
         let macho = MachO::parse(file).unwrap();
         print_header(macho.header);
         print_load_commands(macho.load_commands);
     } else {
-        eprintln!("Invalid Mach-O file");
-        return;
+        return Err(MachOErr {
+            detail: "Invalid Mach-O file".to_string(),
+        });
     };
+
+    Ok(())
 }
 
 fn print_header(hdr: MachHeader) {
