@@ -335,16 +335,19 @@ impl<T: Seek + Read> MachO<T> {
     }
 
     pub fn parse(mut buf: T) -> MachOResult<Self> {
-        let mut bytes = Vec::new();
-        buf.seek(SeekFrom::Start(0))
+        let header = MachHeader::parse(&mut buf)?;
+
+        let mut ldcmds = vec![0u8; header.sizeofcmds() as usize];
+        buf.seek(SeekFrom::Start(header.size() as u64))
             .expect("Unable to seek to start of file");
-        buf.read_to_end(&mut bytes)
+        buf.read_exact(&mut ldcmds)
             .expect("Unable to read file to end");
-        let (mut cursor, header) = MachHeader::parse(&bytes).expect("Unable to parse MachHeader");
+
         let mut cmds = Vec::new();
         let mut symtab_cmd = None;
+        let mut cursor = &ldcmds[..];
         for i in 0..header.ncmds() {
-            match LoadCommand::parse(cursor, header, &bytes, symtab_cmd.clone()) {
+            match LoadCommand::parse(cursor, header, &ldcmds, symtab_cmd.clone()) {
                 Ok((next, cmd)) => {
                     if let LoadCommand::Symtab(symtab) = &cmd {
                         symtab_cmd = Some(symtab.clone());

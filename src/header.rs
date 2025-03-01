@@ -1,7 +1,12 @@
+use std::io::{Read, Seek, SeekFrom};
+
 use nom::{sequence::tuple, IResult};
 use nom_derive::{Nom, Parse};
 
-use crate::machine::{CpuSubType, CpuType};
+use crate::{
+    machine::{CpuSubType, CpuType},
+    macho::{MachOErr, MachOResult},
+};
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Nom)]
@@ -87,6 +92,8 @@ pub struct MachHeader32 {
 }
 
 impl MachHeader32 {
+    pub const SIZE: u8 = 28;
+
     pub fn parse(bytes: &[u8]) -> IResult<&[u8], MachHeader32> {
         let (bytes, (magic, cputype)) = tuple((MHMagic::parse_le, CpuType::parse))(bytes)?;
         let (bytes, (cpusubtype, filetype, ncmds, sizeofcmds, flags)) = tuple((
@@ -125,6 +132,8 @@ pub struct MachHeader64 {
 }
 
 impl MachHeader64 {
+    pub const SIZE: u8 = 32;
+
     pub fn parse(bytes: &[u8]) -> IResult<&[u8], MachHeader64> {
         let (bytes, (magic, cputype)) = tuple((MHMagic::parse_le, CpuType::parse))(bytes)?;
         let (bytes, cpusubtype) = CpuSubType::parse(bytes, cputype)?;
@@ -157,17 +166,44 @@ pub enum MachHeader {
 }
 
 impl MachHeader {
-    pub fn parse(bytes: &[u8]) -> IResult<&[u8], MachHeader> {
-        let (_, magic) = MHMagic::parse_le(bytes)?;
+    pub fn parse<T>(buf: &mut T) -> MachOResult<MachHeader>
+    where
+        T: Seek + Read,
+    {
+        buf.seek(SeekFrom::Start(0)).map_err(|_| MachOErr {
+            detail: "Failed to seek to start of file".to_string(),
+        })?;
+
+        let mut magic = [0; std::mem::size_of::<MHMagic>()];
+        buf.read_exact(&mut magic).map_err(|_| MachOErr {
+            detail: "Failed to read magic number".to_string(),
+        })?;
+
+        let (_, magic) = MHMagic::parse_le(&magic).map_err(|_| MachOErr {
+            detail: "Failed to parse magic number".to_string(),
+        })?;
+
+        let header_size = match magic {
+            MHMagic::MhMagic => MachHeader32::SIZE,
+            MHMagic::MhMagic64 => MachHeader64::SIZE,
+        };
+
+        let mut header = vec![0; header_size as usize];
+        buf.seek(SeekFrom::Start(0)).map_err(|_| MachOErr {
+            detail: "Failed to seek to start of file".to_string(),
+        })?;
+        buf.read_exact(&mut header).map_err(|_| MachOErr {
+            detail: "Failed to read header".to_string(),
+        })?;
 
         match magic {
             MHMagic::MhMagic => {
-                let (remaining, header) = MachHeader32::parse(bytes)?;
-                Ok((remaining, MachHeader::Header32(header)))
+                let (_, header) = MachHeader32::parse(&header).unwrap();
+                Ok(MachHeader::Header32(header))
             }
             MHMagic::MhMagic64 => {
-                let (remaining, header) = MachHeader64::parse(bytes)?;
-                Ok((remaining, MachHeader::Header64(header)))
+                let (_, header) = MachHeader64::parse(&header).unwrap();
+                Ok(MachHeader::Header64(header))
             }
         }
     }
@@ -218,6 +254,13 @@ impl MachHeader {
         match self {
             MachHeader::Header32(h) => &h.flags,
             MachHeader::Header64(h) => &h.flags,
+        }
+    }
+
+    pub fn size(&self) -> u8 {
+        match self {
+            MachHeader::Header32(_) => MachHeader32::SIZE,
+            MachHeader::Header64(_) => MachHeader64::SIZE,
         }
     }
 }
