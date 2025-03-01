@@ -1,12 +1,31 @@
 use crate::{helpers::string_upto_null_terminator, segment::SegmentCommand64};
 
+bitflags::bitflags! {
+    #[derive(Debug)]
+    pub struct ObjCImageInfoFlags: u32 {
+        const IS_REPLACEMENT = 1 << 0;
+        const SUPPORTS_GC = 1 << 1;
+        const REQUIRES_GC = 1 << 2;
+        const OPTIMIZED_BY_DYLD = 1 << 3;
+        const CORRECTED_SYNTHESIZE = 1 << 4;
+        const IS_SIMULATED = 1 << 5;
+        const HAS_CATEGORY_CLASS_PROPERTIES = 1 << 6;
+        const OPTIMIZED_BY_DYLD_CLOSURE = 1 << 7;
+    }
+}
+
 #[derive(Debug)]
 pub struct ObjCImageInfo {
     pub version: u32,
-    pub flag: u32,
+    pub flags: ObjCImageInfoFlags,
+    pub swift_stable_version: u32,
+    pub swift_unstable_version: u32,
 }
 
 impl ObjCImageInfo {
+    pub const SWIFT_UNSTABLE_VERSION_MASK: u32 = 0xff << 8;
+    pub const SWIFT_STABLE_VERSION_MASK: u32 = 0xff << 16;
+
     pub fn parse(segs: Vec<&SegmentCommand64>, all: &[u8]) -> Option<ObjCImageInfo> {
         let objc_image_info = segs
             .iter()
@@ -17,9 +36,17 @@ impl ObjCImageInfo {
             ..objc_image_info.offset as usize + objc_image_info.size as usize];
 
         let (_, version) = nom::number::complete::le_u32::<_, ()>(&info[0..4]).unwrap();
-        let (_, flag) = nom::number::complete::le_u32::<_, ()>(&info[4..8]).unwrap();
+        let (_, flags) = nom::number::complete::le_u32::<_, ()>(&info[4..8]).unwrap();
+        let swift_stable_version = (flags & Self::SWIFT_STABLE_VERSION_MASK) >> 16;
+        let swift_unstable_version = (flags & Self::SWIFT_UNSTABLE_VERSION_MASK) >> 8;
+        let flags = ObjCImageInfoFlags::from_bits(flags).unwrap();
 
-        Some(ObjCImageInfo { version, flag })
+        Some(ObjCImageInfo {
+            version,
+            flags,
+            swift_stable_version,
+            swift_unstable_version,
+        })
     }
 }
 
@@ -113,6 +140,7 @@ impl ObjCClass {
         cls.chunks_exact(8)
             .map(|cls| {
                 let (_, cls_addr) = nom::number::complete::le_u64::<_, ()>(cls).unwrap();
+                println!("cls_addr: {:#x}", cls_addr);
 
                 let seg = ObjCInfo::seg_for_vm_addr(segs.clone(), cls_addr).unwrap();
 
@@ -160,6 +188,7 @@ impl ObjCSelRef {
         refs.chunks_exact(8)
             .map(|ref_| {
                 let (_, selref) = nom::number::complete::le_u64::<_, ()>(ref_).unwrap();
+                // println!("selref: {:#x}", selref);
 
                 let selref_off = ObjCInfo::file_off_for_vm_addr(segs.clone(), selref).unwrap();
                 let (_, s) = string_upto_null_terminator(&all[selref_off as usize..]).unwrap();
@@ -182,13 +211,17 @@ pub struct ObjCInfo {
 
 impl ObjCInfo {
     pub fn parse(segs: Vec<&SegmentCommand64>, all: &[u8]) -> Option<ObjCInfo> {
-        let selrefs = ObjCSelRef::parse(segs.clone(), all);
+        // TODO: The selrefs section sometimes has some bits near the MSB set that invalidate the pointer.
+        // It's not clear if this is meant to be a vm addr or file offset, so I don't really want to just mask it off.
+        // let selrefs = ObjCSelRef::parse(segs.clone(), all);
         let classes = ObjCClass::parse(segs.clone(), all);
         let imageinfo = ObjCImageInfo::parse(segs.clone(), all);
 
         Some(ObjCInfo {
-            selrefs,
+            // selrefs,
             classes,
+            selrefs: vec![],
+            // classes: vec![],
             imageinfo,
         })
     }

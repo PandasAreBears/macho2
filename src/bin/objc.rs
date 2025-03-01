@@ -77,5 +77,5 @@ fn main() {
         .collect();
 
     let objc_info = ObjCInfo::parse(seg_cmds, &buffer).unwrap();
-    println!("{:?}", objc_info.imageinfo);
+    println!("{:#?}", objc_info.classes);
 }
