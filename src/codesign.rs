@@ -1,12 +1,12 @@
+use std::io::{Read, Seek, SeekFrom};
+
 use bitflags;
 use nom::{self, Parser};
 use num_derive::FromPrimitive;
 
 use crate::{
-    commands::LinkeditDataCommand,
-    header::MachHeader,
-    helpers::string_upto_null_terminator,
-    load_command::{LoadCommand, LoadCommandBase},
+    commands::LinkeditDataCommand, header::MachHeader, helpers::string_upto_null_terminator,
+    load_command::LoadCommandBase, macho::LoadCommand,
 };
 
 bitflags::bitflags! {
@@ -505,18 +505,22 @@ pub struct CodeSignCommand {
     pub blobs: Vec<CodeSignBlob>,
 }
 
-impl LoadCommand for CodeSignCommand {
-    fn parse<'a>(
-        bytes: &'a [u8],
+impl CodeSignCommand {
+    pub fn parse<'a, T: Seek + Read>(
+        buf: &mut T,
         base: LoadCommandBase,
-        header: MachHeader,
-        all: &'a [u8],
+        ldcmd: &'a [u8],
+        _: MachHeader,
+        _: &Vec<LoadCommand>,
     ) -> nom::IResult<&'a [u8], Self> {
-        let (bytes, cmd) = LinkeditDataCommand::parse(bytes, base, header, all)?;
-        let cs = &all[cmd.dataoff as usize..cmd.dataoff as usize + cmd.datasize as usize];
-        let (_, blobs) = CodeSignSuperBlob::parse(cs)?;
+        let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+        let mut cs = vec![0u8; cmd.datasize as usize];
+        buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
+        buf.read_exact(&mut cs).unwrap();
 
-        let blobs = blobs
+        let (_, super_blob) = CodeSignSuperBlob::parse(&cs).unwrap();
+
+        let blobs: Vec<CodeSignBlob> = super_blob
             .blobs
             .iter()
             .map(|blob| {
@@ -540,12 +544,6 @@ impl LoadCommand for CodeSignCommand {
                             data: blob_data.to_vec(),
                         })
                     }
-                    // TODO: BROKEN!
-                    // CodeSignSlot::SignatureSlot => {
-                    //     // let (_, signature) = CodeSignSignature::parse(blob_data).unwrap();
-                    //     // CodeSignBlob::SignatureSlot(signature)
-                    //     CodeSignBlob::None
-                    // }
                     _ => CodeSignBlob::None,
                 }
             })

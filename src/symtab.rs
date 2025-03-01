@@ -1,9 +1,12 @@
+use std::io::{Read, Seek};
+
 use num_derive::FromPrimitive;
 
 use crate::{
     header::MachHeader,
     helpers::string_upto_null_terminator,
-    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase},
+    load_command::{LCLoadCommand, LoadCommandBase},
+    macho::LoadCommand,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
@@ -134,6 +137,8 @@ pub struct Nlist64 {
 }
 
 impl Nlist64 {
+    pub const SIZE: u8 = 16;
+
     pub fn parse<'a>(bytes: &'a [u8], strings: &[u8]) -> nom::IResult<&'a [u8], Self> {
         let (cursor, n_strx) = nom::number::complete::le_u32(bytes)?;
         let n_strx = string_upto_null_terminator(&strings[n_strx as usize..])
@@ -168,31 +173,41 @@ pub struct SymtabCommand {
     pub symbols: Vec<Nlist64>,
 }
 
-impl LoadCommand for SymtabCommand {
-    fn parse<'a>(
-        bytes: &'a [u8],
+impl SymtabCommand {
+    pub fn parse<'a, T: Seek + Read>(
+        buf: &mut T,
         base: LoadCommandBase,
+        ldcmd: &'a [u8],
         _: MachHeader,
-        all: &'a [u8],
+        _: &Vec<LoadCommand>,
     ) -> nom::IResult<&'a [u8], Self> {
-        let end = &bytes[base.cmdsize as usize..];
-        let (cursor, _) = LoadCommandBase::skip(bytes)?;
+        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, symoff) = nom::number::complete::le_u32(cursor)?;
         let (cursor, nsyms) = nom::number::complete::le_u32(cursor)?;
         let (cursor, stroff) = nom::number::complete::le_u32(cursor)?;
-        let (_, strsize) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, strsize) = nom::number::complete::le_u32(cursor)?;
 
-        let string_pool = &all[stroff as usize..stroff as usize + strsize as usize];
+        let mut string_pool = vec![0u8; strsize as usize];
+        buf.seek(std::io::SeekFrom::Start(stroff as u64)).unwrap();
+        buf.read_exact(&mut string_pool).unwrap();
+
+        let mut sym_offs = vec![0u8; nsyms as usize * Nlist64::SIZE as usize];
+        buf.seek(std::io::SeekFrom::Start(symoff as u64)).unwrap();
+        buf.read_exact(&mut sym_offs).unwrap();
+
         let symbols = (0..nsyms)
             .map(|i| {
-                let offset = symoff as usize + i as usize * 16;
-                let (_, symbol) = Nlist64::parse(&all[offset..], string_pool).unwrap();
+                let (_, symbol) = Nlist64::parse(
+                    &sym_offs[i as usize * Nlist64::SIZE as usize..],
+                    &string_pool,
+                )
+                .unwrap();
                 symbol
             })
             .collect();
 
         Ok((
-            end,
+            cursor,
             SymtabCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -239,15 +254,14 @@ impl DysymtabCommand {
     pub const INDIRECT_SYMBOL_LOCAL: u32 = 0x80000000;
     pub const INDIRECT_SYMBOL_ABS: u32 = 0x40000000;
 
-    pub fn parse<'a>(
-        bytes: &'a [u8],
+    pub fn parse<'a, T: Seek + Read>(
+        buf: &mut T,
         base: LoadCommandBase,
+        ldcmd: &'a [u8],
         _: MachHeader,
-        all: &'a [u8],
-        symtab: SymtabCommand,
+        prev_cmds: &Vec<LoadCommand>,
     ) -> nom::IResult<&'a [u8], Self> {
-        let end = &bytes[base.cmdsize as usize..];
-        let (cursor, _) = LoadCommandBase::skip(bytes)?;
+        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, ilocalsym) = nom::number::complete::le_u32(cursor)?;
         let (cursor, nlocalsym) = nom::number::complete::le_u32(cursor)?;
         let (cursor, iextdefsym) = nom::number::complete::le_u32(cursor)?;
@@ -265,7 +279,18 @@ impl DysymtabCommand {
         let (cursor, extreloff) = nom::number::complete::le_u32(cursor)?;
         let (cursor, nextrel) = nom::number::complete::le_u32(cursor)?;
         let (cursor, locreloff) = nom::number::complete::le_u32(cursor)?;
-        let (_, nlocrel) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, nlocrel) = nom::number::complete::le_u32(cursor)?;
+
+        let symtab = prev_cmds
+            .iter()
+            .find_map(|cmd| {
+                if let LoadCommand::Symtab(symtab) = cmd {
+                    Some(symtab)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
 
         let locals = symtab.symbols[ilocalsym as usize..(ilocalsym + nlocalsym) as usize]
             .iter()
@@ -282,13 +307,17 @@ impl DysymtabCommand {
             .cloned()
             .collect();
 
-        let indirect_bytes =
-            &all[indirectsymoff as usize..indirectsymoff as usize + nindirectsyms as usize * 4];
+        let mut indirect_bytes = vec![0u8; nindirectsyms as usize * 4];
+        buf.seek(std::io::SeekFrom::Start(indirectsymoff as u64))
+            .unwrap();
+        buf.read_exact(&mut indirect_bytes).unwrap();
+
         let indirect = {
             let mut indices = Vec::new();
-            let mut cursor = indirect_bytes;
+            let mut cursor = &indirect_bytes[..];
             while !cursor.is_empty() {
-                let (remaining, index) = nom::number::complete::le_u32(cursor)?;
+                let (remaining, index) =
+                    nom::number::complete::le_u32::<_, nom::error::Error<_>>(cursor).unwrap();
                 cursor = remaining;
                 if index & Self::INDIRECT_SYMBOL_LOCAL > 0 {
                     println!("Local symbol");
@@ -309,7 +338,7 @@ impl DysymtabCommand {
         };
 
         Ok((
-            end,
+            cursor,
             DysymtabCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,

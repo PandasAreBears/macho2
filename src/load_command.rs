@@ -1,5 +1,3 @@
-use crate::header::MachHeader;
-
 use nom_derive::{Nom, Parse};
 
 #[repr(u32)]
@@ -81,15 +79,4 @@ impl LoadCommandBase {
         let (remaining, _) = nom::bytes::complete::take(8usize)(bytes)?;
         Ok((remaining, ()))
     }
-}
-
-pub trait LoadCommand {
-    fn parse<'a>(
-        bytes: &'a [u8],
-        base: LoadCommandBase,
-        header: MachHeader,
-        all: &'a [u8],
-    ) -> nom::IResult<&'a [u8], Self>
-    where
-        Self: Sized;
 }

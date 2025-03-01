@@ -1,3 +1,8 @@
+use std::{
+    io::{Read, Seek, SeekFrom},
+    vec,
+};
+
 use nom::{error::Error, Parser};
 use num_derive::FromPrimitive;
 
@@ -5,7 +10,8 @@ use crate::{
     commands::LinkeditDataCommand,
     header::MachHeader,
     helpers::{read_sleb, read_uleb, string_upto_null_terminator},
-    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase},
+    load_command::{LCLoadCommand, LoadCommandBase},
+    macho::LoadCommand,
 };
 
 #[derive(Debug, FromPrimitive, Clone, Copy)]
@@ -678,26 +684,34 @@ pub struct DyldChainedFixupCommand {
     pub starts: DyldStartsInImage,
 }
 
-impl LoadCommand for DyldChainedFixupCommand {
-    fn parse<'a>(
-        bytes: &'a [u8],
+impl DyldChainedFixupCommand {
+    pub fn parse<'a, T: Seek + Read>(
+        buf: &mut T,
         base: LoadCommandBase,
-        header: MachHeader,
-        all: &'a [u8],
+        ldcmd: &'a [u8],
+        _: MachHeader,
+        _: &Vec<LoadCommand>,
     ) -> nom::IResult<&'a [u8], DyldChainedFixupCommand> {
-        let (bytes, cmd) = LinkeditDataCommand::parse(bytes, base, header, all)?;
-        let blob = &all[cmd.dataoff as usize..cmd.dataoff as usize + cmd.datasize as usize];
-        let (_, header) = DyldChainedFixupsHeader::parse(blob)?;
-        let (_, imports) = nom::multi::count(
-            |cursor| DyldChainedImport::parse(cursor, &blob[header.symbols_offset as usize..]),
-            header.imports_count as usize,
-        )
-        .parse(&blob[header.imports_offset as usize..])?;
+        let (_, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+        let mut blob = vec![0; cmd.datasize as usize];
+        buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
+        buf.read_exact(&mut blob).unwrap();
 
-        let (_, starts) = DyldStartsInImage::parse(&blob[header.starts_offset as usize..])?;
+        let (_, header) = DyldChainedFixupsHeader::parse(&blob).unwrap();
+        let mut imports = vec![];
+        for i in 0..header.imports_count {
+            let (_, import) = DyldChainedImport::parse(
+                &blob[header.imports_offset as usize + i as usize * 4..],
+                &blob[header.symbols_offset as usize..],
+            )
+            .unwrap();
+            imports.push(import);
+        }
+
+        let (_, starts) = DyldStartsInImage::parse(&blob[header.starts_offset as usize..]).unwrap();
 
         Ok((
-            bytes,
+            ldcmd,
             DyldChainedFixupCommand {
                 cmd,
                 header,
@@ -730,16 +744,15 @@ pub struct DyldInfoCommand {
     pub exports: Vec<DyldExport>,
 }
 
-impl LoadCommand for DyldInfoCommand {
-    fn parse<'a>(
-        bytes: &'a [u8],
+impl DyldInfoCommand {
+    pub fn parse<'a, T: Seek + Read>(
+        buf: &mut T,
         base: LoadCommandBase,
+        ldcmd: &'a [u8],
         _: MachHeader,
-        all: &'a [u8],
+        _: &Vec<LoadCommand>,
     ) -> nom::IResult<&'a [u8], Self> {
-        let end = &bytes[base.cmdsize as usize..];
-
-        let (cursor, _) = LoadCommandBase::skip(bytes)?;
+        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, rebase_off) = nom::number::complete::le_u32(cursor)?;
         let (cursor, rebase_size) = nom::number::complete::le_u32(cursor)?;
         let (cursor, bind_off) = nom::number::complete::le_u32(cursor)?;
@@ -749,28 +762,35 @@ impl LoadCommand for DyldInfoCommand {
         let (cursor, lazy_bind_off) = nom::number::complete::le_u32(cursor)?;
         let (cursor, lazy_bind_size) = nom::number::complete::le_u32(cursor)?;
         let (cursor, export_off) = nom::number::complete::le_u32(cursor)?;
-        let (_, export_size) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, export_size) = nom::number::complete::le_u32(cursor)?;
 
-        let (_, rebase_instructions) = RebaseInstruction::parse(
-            &all[rebase_off as usize..(rebase_off + rebase_size) as usize],
-        )?;
+        let mut rebase_blob = vec![0u8; rebase_size as usize];
+        buf.seek(SeekFrom::Start(rebase_off as u64)).unwrap();
+        buf.read_exact(&mut rebase_blob).unwrap();
+        let (_, rebase_instructions) = RebaseInstruction::parse(&rebase_blob).unwrap();
 
-        let (_, bind_instructions) =
-            BindInstruction::parse(&all[bind_off as usize..(bind_off + bind_size) as usize])?;
+        let mut bind_blob = vec![0u8; bind_size as usize];
+        buf.seek(SeekFrom::Start(bind_off as u64)).unwrap();
+        buf.read_exact(&mut bind_blob).unwrap();
+        let (_, bind_instructions) = BindInstruction::parse(&bind_blob).unwrap();
 
-        let (_, weak_instructions) = BindInstruction::parse(
-            &all[weak_bind_off as usize..(weak_bind_off + weak_bind_size) as usize],
-        )?;
+        let mut weak_bind_blob = vec![0u8; weak_bind_size as usize];
+        buf.seek(SeekFrom::Start(weak_bind_off as u64)).unwrap();
+        buf.read_exact(&mut weak_bind_blob).unwrap();
+        let (_, weak_instructions) = BindInstruction::parse(&weak_bind_blob).unwrap();
 
-        let (_, lazy_instructions) = BindInstruction::parse(
-            &all[lazy_bind_off as usize..(lazy_bind_off + lazy_bind_size) as usize],
-        )?;
+        let mut lazy_bind_blob = vec![0u8; lazy_bind_size as usize];
+        buf.seek(SeekFrom::Start(lazy_bind_off as u64)).unwrap();
+        buf.read_exact(&mut lazy_bind_blob).unwrap();
+        let (_, lazy_instructions) = BindInstruction::parse(&lazy_bind_blob).unwrap();
 
-        let (_, exports) =
-            DyldExport::parse(&all[export_off as usize..(export_off + export_size) as usize])?;
+        let mut export_blob = vec![0u8; export_size as usize];
+        buf.seek(SeekFrom::Start(export_off as u64)).unwrap();
+        buf.read_exact(&mut export_blob).unwrap();
+        let (_, exports) = DyldExport::parse(&export_blob).unwrap();
 
         Ok((
-            end,
+            cursor,
             DyldInfoCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -800,15 +820,19 @@ pub struct DyldExportsTrie {
     pub exports: Vec<DyldExport>,
 }
 
-impl LoadCommand for DyldExportsTrie {
-    fn parse<'a>(
-        bytes: &'a [u8],
+impl DyldExportsTrie {
+    pub fn parse<'a, T: Seek + Read>(
+        buf: &mut T,
         base: LoadCommandBase,
-        header: MachHeader,
-        all: &'a [u8],
+        ldcmd: &'a [u8],
+        _: MachHeader,
+        _: &Vec<LoadCommand>,
     ) -> nom::IResult<&'a [u8], Self> {
-        let (bytes, cmd) = LinkeditDataCommand::parse(bytes, base, header, all)?;
-        let (_, exports) = DyldExport::parse(&all[cmd.dataoff as usize..])?;
+        let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+        let mut blob = vec![0; cmd.datasize as usize];
+        buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
+        buf.read_exact(&mut blob).unwrap();
+        let (_, exports) = DyldExport::parse(&blob).unwrap();
         Ok((bytes, DyldExportsTrie { cmd, exports }))
     }
 }

@@ -1,9 +1,12 @@
+use std::io::{Read, Seek};
+
 use num_derive::FromPrimitive;
 
 use crate::{
     header::MachHeader,
     helpers::string_upto_null_terminator,
-    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase},
+    load_command::{LCLoadCommand, LoadCommandBase},
+    macho::LoadCommand,
 };
 
 bitflags::bitflags! {
@@ -259,15 +262,15 @@ pub struct SegmentCommand32 {
     pub sects: Vec<Section32>,
 }
 
-impl LoadCommand for SegmentCommand32 {
-    fn parse<'a>(
-        bytes: &'a [u8],
+impl SegmentCommand32 {
+    pub fn parse<'a, T: Seek + Read>(
+        _: &mut T,
         base: LoadCommandBase,
+        ldcmd: &'a [u8],
         _: MachHeader,
-        _: &'a [u8],
+        _: &Vec<LoadCommand>,
     ) -> nom::IResult<&'a [u8], Self> {
-        let end = &bytes[base.cmdsize as usize..];
-        let (cursor, _) = LoadCommandBase::skip(bytes)?;
+        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, segname) = nom::bytes::complete::take(16usize)(cursor)?;
         let (_, segname) = string_upto_null_terminator(segname)?;
 
@@ -286,10 +289,10 @@ impl LoadCommand for SegmentCommand32 {
 
         let (cursor, flags) = SGFlags::parse(cursor)?;
 
-        let (_, sects) = nom::multi::count(Section32::parse, nsects as usize)(cursor)?;
+        let (cursor, sects) = nom::multi::count(Section32::parse, nsects as usize)(cursor)?;
 
         Ok((
-            end,
+            cursor,
             SegmentCommand32 {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -324,15 +327,15 @@ pub struct SegmentCommand64 {
     pub sections: Vec<Section64>,
 }
 
-impl LoadCommand for SegmentCommand64 {
-    fn parse<'a>(
-        bytes: &'a [u8],
+impl SegmentCommand64 {
+    pub fn parse<'a, T: Seek + Read>(
+        _: &mut T,
         base: LoadCommandBase,
+        ldcmd: &'a [u8],
         _: MachHeader,
-        _: &'a [u8],
+        _: &Vec<LoadCommand>,
     ) -> nom::IResult<&'a [u8], Self> {
-        let end = &bytes[base.cmdsize as usize..];
-        let (cursor, _) = LoadCommandBase::skip(bytes)?;
+        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, segname) = nom::bytes::complete::take(16usize)(cursor)?;
         let (_, segname) = string_upto_null_terminator(segname)?;
 
@@ -350,10 +353,10 @@ impl LoadCommand for SegmentCommand64 {
             SGFlags::parse,
         ))(cursor)?;
 
-        let (_, sections) = nom::multi::count(Section64::parse, nsects as usize)(cursor)?;
+        let (cursor, sections) = nom::multi::count(Section64::parse, nsects as usize)(cursor)?;
 
         Ok((
-            end,
+            cursor,
             SegmentCommand64 {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
