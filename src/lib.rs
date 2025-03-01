@@ -3,6 +3,7 @@ pub mod commands;
 pub mod dyldinfo;
 pub mod dylib;
 pub mod fat;
+pub mod file_subset;
 pub mod header;
 mod helpers;
 pub mod load_command;

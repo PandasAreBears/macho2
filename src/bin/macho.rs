@@ -1,12 +1,12 @@
 use macho2::{
-    header::{MHMagic, MachHeader},
+    header::MachHeader,
     macho::{FatMachO, LoadCommand, MachO},
     segment::Protection,
 };
 use std::{
     env,
     fs::File,
-    io::{stdout, Read, Write},
+    io::{stdout, Write},
 };
 
 fn main() {
@@ -25,19 +25,8 @@ fn main() {
         }
     };
 
-    let mut buffer = Vec::new();
-    if let Err(e) = file.read_to_end(&mut buffer) {
-        eprintln!("Failed to read file: {}", e);
-        return;
-    }
-
-    if buffer.len() < std::mem::size_of::<MHMagic>() {
-        eprintln!("File too short to be a Mach-O file");
-        return;
-    }
-
-    let macho: MachO = if FatMachO::is_fat_magic(&buffer) {
-        let fat_macho = FatMachO::parse(&buffer).unwrap();
+    if FatMachO::is_fat_magic(&mut file) {
+        let mut fat_macho = FatMachO::parse(&mut file).unwrap();
         println!("This is a fat macho file. Please select an architecture:");
         for (i, arch) in fat_macho.archs.iter().enumerate() {
             println!("{}: {:?} {:?}", i, arch.cputype(), arch.cpusubtype());
@@ -56,16 +45,17 @@ fn main() {
                 ),
             }
         };
-        fat_macho.macho(fat_macho.archs[index].cputype())
-    } else if MachO::is_macho_magic(&buffer) {
-        MachO::parse(&buffer).unwrap()
+        let macho = fat_macho.macho(fat_macho.archs[index].cputype());
+        print_header(macho.header);
+        print_load_commands(macho.load_commands);
+    } else if MachO::is_macho_magic(&mut file) {
+        let macho = MachO::parse(file).unwrap();
+        print_header(macho.header);
+        print_load_commands(macho.load_commands);
     } else {
         eprintln!("Invalid Mach-O file");
         return;
     };
-
-    print_header(macho.header);
-    print_load_commands(macho.load_commands);
 }
 
 fn print_header(hdr: MachHeader) {

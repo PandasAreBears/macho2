@@ -1,4 +1,4 @@
-use std::process::exit;
+use std::io::{Read, Seek, SeekFrom};
 
 use crate::codesign::CodeSignCommand;
 use crate::commands::{
@@ -13,6 +13,7 @@ use crate::dylib::{
     SubLibraryCommand, SubUmbrellaCommand,
 };
 use crate::fat::{FatArch, FatHeader, FatMagic};
+use crate::file_subset::FileSubset;
 use crate::header::{MHMagic, MachHeader};
 
 use crate::load_command::{self, LCLoadCommand, LoadCommand as IOnlyNeedThisForTheTrait};
@@ -297,24 +298,34 @@ impl LoadCommand {
 
 #[allow(dead_code)]
 #[derive(Debug)]
-pub struct MachO {
+pub struct MachO<T: Seek + Read> {
     pub header: MachHeader,
     pub load_commands: Vec<LoadCommand>,
-    bytes: Vec<u8>,
+    buf: T, // Now owns the buffer
 }
 
-impl MachO {
-    pub fn is_macho_magic(bytes: &[u8]) -> bool {
-        let magic = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+impl<T: Seek + Read> MachO<T> {
+    pub fn is_macho_magic(buf: &mut T) -> bool {
+        let mut magic: [u8; 4] = [0; 4];
+        buf.seek(SeekFrom::Start(0))
+            .expect("Unable to seek to start of file");
+        buf.read_exact(&mut magic)
+            .expect("Unable to read magic from file");
+        let magic = u32::from_le_bytes(magic);
         magic == MHMagic::MhMagic as u32 || magic == MHMagic::MhMagic64 as u32
     }
 
-    pub fn parse(bytes: &[u8]) -> Result<Self, nom::Err<nom::error::Error<&[u8]>>> {
-        let (mut cursor, header) = MachHeader::parse(bytes)?;
+    pub fn parse(mut buf: T) -> Result<Self, &'static str> {
+        let mut bytes = Vec::new();
+        buf.seek(SeekFrom::Start(0))
+            .expect("Unable to seek to start of file");
+        buf.read_to_end(&mut bytes)
+            .expect("Unable to read file to end");
+        let (mut cursor, header) = MachHeader::parse(&bytes).expect("Unable to parse MachHeader");
         let mut cmds = Vec::new();
         let mut symtab_cmd = None;
         for _ in 0..header.ncmds() {
-            match LoadCommand::parse(cursor, header, bytes, symtab_cmd.clone()) {
+            match LoadCommand::parse(cursor, header, &bytes, symtab_cmd.clone()) {
                 Ok((next, cmd)) => {
                     if let LoadCommand::Symtab(symtab) = &cmd {
                         symtab_cmd = Some(symtab.clone());
@@ -323,32 +334,42 @@ impl MachO {
                     cmds.push(cmd);
                     cursor = next;
                 }
-                Err(e) => return Err(e),
+                Err(_) => return Err("Unable to parse LoadCommand"),
             }
         }
 
         Ok(Self {
             header,
             load_commands: cmds,
-            bytes: bytes.to_vec(),
+            buf,
         })
     }
 }
 
-pub struct FatMachO<'a> {
+pub struct FatMachO<'a, T: Seek + Read> {
     pub header: FatHeader,
     pub archs: Vec<FatArch>,
-    bytes: &'a [u8],
+    buf: &'a mut T,
 }
 
-impl<'a> FatMachO<'a> {
-    pub fn is_fat_magic(bytes: &[u8]) -> bool {
-        let magic = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+impl<'a, T: Seek + Read> FatMachO<'a, T> {
+    pub fn is_fat_magic(buf: &'a mut T) -> bool {
+        let mut magic = [0; 4];
+        buf.seek(SeekFrom::Start(0))
+            .expect("Unable to seek to start of file");
+        buf.read_exact(&mut magic)
+            .expect("Unable to read magic from file");
+        let magic = u32::from_be_bytes(magic);
         magic == FatMagic::Fat as u32 || magic == FatMagic::Fat64 as u32
     }
 
-    pub fn parse(bytes: &'a [u8]) -> Result<Self, nom::Err<nom::error::Error<&'a [u8]>>> {
-        let (mut cursor, header) = FatHeader::parse(bytes)?;
+    pub fn parse(buf: &'a mut T) -> Result<Self, &'static str> {
+        let mut bytes = Vec::new();
+        buf.seek(SeekFrom::Start(0))
+            .expect("Unable to seek to start of file");
+        buf.read_to_end(&mut bytes)
+            .expect("Unable to read file to end");
+        let (mut cursor, header) = FatHeader::parse(&bytes).expect("Unable to parse FatHeader");
         let mut archs = Vec::new();
         for _ in 0..header.nfat_arch {
             let (next, arch) = FatArch::parse(cursor, header.magic).unwrap();
@@ -356,29 +377,25 @@ impl<'a> FatMachO<'a> {
             cursor = next;
         }
 
-        Ok(Self {
-            header,
-            archs,
-            bytes,
-        })
+        Ok(Self { header, archs, buf })
     }
 
-    pub fn macho(&self, cputype: machine::CpuType) -> MachO {
+    pub fn macho(&'a mut self, cputype: machine::CpuType) -> MachO<FileSubset<'a, T>> {
         let arch = self
             .archs
             .iter()
             .find(|arch| arch.cputype() == cputype)
             .unwrap();
-        let offset = arch.offset() as usize;
-        let size = arch.size() as usize;
-        let bytes = &self.bytes[offset..offset + size];
+        let offset = arch.offset();
+        let size = arch.size();
 
-        if !MachO::is_macho_magic(bytes) {
+        let mut partial = FileSubset::new(self.buf, offset, size).expect("Unable to create subset");
+
+        if !MachO::is_macho_magic(&mut partial) {
             // TODO: Should probably return a Result instead of exiting
-            eprintln!("Fat MachO slice is not a MachO 🤔");
-            exit(0);
+            panic!("Fat MachO slice is not a MachO 🤔");
         }
 
-        MachO::parse(bytes).unwrap()
+        MachO::parse(partial).unwrap()
     }
 }

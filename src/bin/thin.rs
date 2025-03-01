@@ -1,7 +1,7 @@
 use std::{
     env,
     fs::File,
-    io::{stdout, Read, Write},
+    io::{stdout, Read, Seek, Write},
 };
 
 use macho2::macho::FatMachO;
@@ -22,18 +22,7 @@ fn main() {
         }
     };
 
-    let mut buffer = Vec::new();
-    if let Err(e) = file.read_to_end(&mut buffer) {
-        eprintln!("Failed to read file: {}", e);
-        return;
-    }
-
-    if !FatMachO::is_fat_magic(&buffer) {
-        eprintln!("Not a fat macho file.");
-        return;
-    }
-
-    let fat_macho = FatMachO::parse(&buffer).unwrap();
+    let fat_macho = FatMachO::parse(&mut file).unwrap();
     for (i, arch) in fat_macho.archs.iter().enumerate() {
         println!("{}: {:?} {:?}", i, arch.cputype(), arch.cpusubtype());
     }
@@ -69,9 +58,27 @@ fn main() {
         }
     };
 
-    if let Err(e) =
-        file.write_all(&buffer[arch.offset() as usize..(arch.offset() + arch.size()) as usize])
-    {
+    let mut buffer = Vec::new();
+    if let Err(e) = file.seek(std::io::SeekFrom::Start(arch.offset())) {
+        eprintln!("Failed to seek file: {}", e);
+        return;
+    }
+
+    if let Err(e) = file.take(arch.size()).read_to_end(&mut buffer) {
+        eprintln!("Failed to read file: {}", e);
+        return;
+    }
+
+    let file_path = &args[2];
+    let mut outfile = match File::open(file_path) {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("Failed to open file: {}", e);
+            return;
+        }
+    };
+
+    if let Err(e) = outfile.write_all(&buffer) {
         eprintln!("Failed to write file: {}", e);
         return;
     }
