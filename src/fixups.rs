@@ -499,7 +499,7 @@ impl DyldChainedPtr32FirmwareRebase {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DyldPointerFixup {
     Arm64eRebase24(DyldChainedPtrArm64eRebase24),
     Arm64eAuthRebase24(DyldChainedPtrArm64eAuthRebase24),
@@ -516,6 +516,50 @@ pub enum DyldPointerFixup {
     Arm64eAuthRebase(DyldChainedPtrArm64eAuthRebase),
     Arm64eBind(DyldChainedPtrArm64eBind),
     Arm64eAuthBind(DyldChainedPtrArm64eAuthBind),
+}
+
+impl DyldPointerFixup {
+    pub fn is_rebase(self) -> bool {
+        match self {
+            DyldPointerFixup::Arm64eRebase24(_) => true,
+            DyldPointerFixup::Arm64eAuthRebase24(_) => true,
+            DyldPointerFixup::Ptr32Rebase(_) => true,
+            DyldPointerFixup::Ptr32CacheRebase(_) => true,
+            DyldPointerFixup::Ptr32FirmwareRebase(_) => true,
+            DyldPointerFixup::Ptr64Rebase(_) => true,
+            DyldPointerFixup::Ptr64KernelCacheRebase(_) => true,
+            DyldPointerFixup::Arm64eRebase(_) => true,
+            DyldPointerFixup::Arm64eAuthRebase(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_bind(self) -> bool {
+        match self {
+            DyldPointerFixup::Arm64eBind24(_) => true,
+            DyldPointerFixup::Arm64eAuthBind24(_) => true,
+            DyldPointerFixup::Ptr32Bind(_) => true,
+            DyldPointerFixup::Ptr64Bind(_) => true,
+            DyldPointerFixup::Arm64eBind(_) => true,
+            DyldPointerFixup::Arm64eAuthBind(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn rebase_target(self) -> Option<u64> {
+        match self {
+            DyldPointerFixup::Arm64eRebase24(fixup) => Some(fixup.target as u64),
+            DyldPointerFixup::Arm64eAuthRebase24(fixup) => Some(fixup.target as u64),
+            DyldPointerFixup::Ptr32Rebase(fixup) => Some(fixup.target as u64),
+            DyldPointerFixup::Ptr32CacheRebase(fixup) => Some(fixup.target as u64),
+            DyldPointerFixup::Ptr32FirmwareRebase(fixup) => Some(fixup.target as u64),
+            DyldPointerFixup::Ptr64Rebase(fixup) => Some(fixup.target),
+            DyldPointerFixup::Ptr64KernelCacheRebase(fixup) => Some(fixup.target as u64),
+            DyldPointerFixup::Arm64eRebase(fixup) => Some(fixup.target as u64),
+            DyldPointerFixup::Arm64eAuthRebase(fixup) => Some(fixup.target as u64),
+            _ => None,
+        }
+    }
 }
 
 impl DyldPointerFixup {
@@ -681,7 +725,7 @@ impl DyldPointerFixup {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DyldFixup {
     pub offset: u64,
     pub fixup: DyldPointerFixup,

@@ -1,22 +1,18 @@
 use std::{
     env,
     fs::File,
-    io::{stdout, Read, Write},
+    io::{stdout, Read, Seek, Write},
 };
 
 use macho2::{
-    header::MHMagic,
-    load_command::LCLoadCommand,
-    macho::{self, FatMachO, LoadCommand, MachO},
+    macho::{FatMachO, MachO, MachOErr, MachOResult},
     objc::ObjCInfo,
-    segment::SegmentCommand64,
 };
-
-fn main() {
+fn main() -> MachOResult<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("Usage: {} <file_path>", args[0]);
-        return;
+        return Ok(());
     }
 
     let file_path = &args[1];
@@ -24,23 +20,12 @@ fn main() {
         Ok(file) => file,
         Err(e) => {
             eprintln!("Failed to open file: {}", e);
-            return;
+            return Ok(());
         }
     };
 
-    let mut buffer = Vec::new();
-    if let Err(e) = file.read_to_end(&mut buffer) {
-        eprintln!("Failed to read file: {}", e);
-        return;
-    }
-
-    if buffer.len() < std::mem::size_of::<MHMagic>() {
-        eprintln!("File too short to be a Mach-O file");
-        return;
-    }
-
-    let macho: MachO = if FatMachO::is_fat_magic(&buffer) {
-        let fat_macho = FatMachO::parse(&buffer).unwrap();
+    if FatMachO::is_fat_magic(&mut file)? {
+        let mut fat_macho = FatMachO::parse(&mut file).unwrap();
         println!("This is a fat macho file. Please select an architecture:");
         for (i, arch) in fat_macho.archs.iter().enumerate() {
             println!("{}: {:?} {:?}", i, arch.cputype(), arch.cpusubtype());
@@ -59,23 +44,26 @@ fn main() {
                 ),
             }
         };
-        fat_macho.macho(fat_macho.archs[index].cputype())
-    } else if MachO::is_macho_magic(&buffer) {
-        MachO::parse(&buffer).unwrap()
+        let mut macho = fat_macho
+            .macho(fat_macho.archs[index].cputype())
+            .map_err(|e| {
+                panic!("Failed to extract Mach-O: {}", e);
+            })
+            .unwrap();
+        print_objc(&mut macho);
+    } else if MachO::is_macho_magic(&mut file)? {
+        let mut macho = MachO::parse(file).unwrap();
+        print_objc(&mut macho);
     } else {
-        eprintln!("Invalid Mach-O file");
-        return;
+        return Err(MachOErr {
+            detail: "Invalid Mach-O file".to_string(),
+        });
     };
 
-    let seg_cmds: Vec<&SegmentCommand64> = macho
-        .load_commands
-        .iter()
-        .filter_map(|lc| match lc {
-            LoadCommand::Segment64(seg) => Some(seg),
-            _ => None,
-        })
-        .collect();
+    Ok(())
+}
 
-    let objc_info = ObjCInfo::parse(seg_cmds, &buffer).unwrap();
-    println!("{:#?}", objc_info.classes);
+fn print_objc<T: Read + Seek>(macho: &mut MachO<T>) {
+    let objc_info = ObjCInfo::parse(macho).unwrap();
+    println!("{:#?}", objc_info.selrefs);
 }

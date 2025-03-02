@@ -1,4 +1,11 @@
-use crate::{helpers::string_upto_null_terminator, segment::SegmentCommand64};
+use std::io::{Read, Seek, SeekFrom};
+
+use crate::{
+    fixups::DyldFixup,
+    helpers::string_upto_null_terminator,
+    macho::{LoadCommand, MachO},
+    segment::SegmentCommand64,
+};
 
 bitflags::bitflags! {
     #[derive(Debug)]
@@ -168,13 +175,18 @@ impl ObjCClass {
 #[derive(Debug)]
 pub struct ObjCSelRef {
     pub sel: String,
-    pub vmaddr: u64,
+    pub offset: u64,
 }
 
 impl ObjCSelRef {
-    pub fn parse(segs: Vec<&SegmentCommand64>, all: &[u8]) -> Vec<ObjCSelRef> {
-        let selrefs = segs
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCSelRef> {
+        let selrefs = macho
+            .load_commands
             .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(seg) => Some(seg),
+                _ => None,
+            })
             .flat_map(|seg| &seg.sections)
             .find(|sect| sect.sectname == "__objc_selrefs");
 
@@ -183,19 +195,27 @@ impl ObjCSelRef {
             None => return Vec::new(),
         };
 
-        let refs = &all[selrefs.offset as usize..selrefs.offset as usize + selrefs.size as usize];
+        let nrefs = selrefs.size / 8;
 
-        refs.chunks_exact(8)
-            .map(|ref_| {
-                let (_, selref) = nom::number::complete::le_u64::<_, ()>(ref_).unwrap();
-                // println!("selref: {:#x}", selref);
+        let offsets: Vec<u64> = (0..nrefs)
+            .map(|i| selrefs.offset as u64 + i * 8u64)
+            .collect();
 
-                let selref_off = ObjCInfo::file_off_for_vm_addr(segs.clone(), selref).unwrap();
-                let (_, s) = string_upto_null_terminator(&all[selref_off as usize..]).unwrap();
+        offsets
+            .into_iter()
+            .map(|offset| {
+                let selref_offset = ObjCInfo::read_offset(macho, offset);
+
+                // Assume a max selref size of 256 bytes
+                let mut selref_data = vec![0u8; 256];
+                macho.buf.seek(SeekFrom::Start(selref_offset)).unwrap();
+                macho.buf.read_exact(&mut selref_data).unwrap();
+
+                let (_, s) = string_upto_null_terminator(&selref_data).unwrap();
 
                 ObjCSelRef {
                     sel: s,
-                    vmaddr: selref,
+                    offset: selref_offset,
                 }
             })
             .collect()
@@ -206,24 +226,48 @@ impl ObjCSelRef {
 pub struct ObjCInfo {
     pub selrefs: Vec<ObjCSelRef>,
     pub classes: Vec<ObjCClass>,
-    pub imageinfo: Option<ObjCImageInfo>,
+    // pub imageinfo: Option<ObjCImageInfo>,
 }
 
 impl ObjCInfo {
-    pub fn parse(segs: Vec<&SegmentCommand64>, all: &[u8]) -> Option<ObjCInfo> {
-        // TODO: The selrefs section sometimes has some bits near the MSB set that invalidate the pointer.
-        // It's not clear if this is meant to be a vm addr or file offset, so I don't really want to just mask it off.
-        // let selrefs = ObjCSelRef::parse(segs.clone(), all);
-        let classes = ObjCClass::parse(segs.clone(), all);
-        let imageinfo = ObjCImageInfo::parse(segs.clone(), all);
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>) -> Option<ObjCInfo> {
+        // let classes = ObjCClass::parse(segs.clone(), all);
+        // let imageinfo = ObjCImageInfo::parse(segs.clone(), all);
+        let selrefs = ObjCSelRef::parse(macho);
 
         Some(ObjCInfo {
             // selrefs,
-            classes,
-            selrefs: vec![],
+            classes: vec![],
+            selrefs,
             // classes: vec![],
-            imageinfo,
+            // imageinfo: ,
         })
+    }
+
+    fn read_offset<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> u64 {
+        let dyldfixup: Vec<&DyldFixup> = macho
+            .load_commands
+            .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::DyldChainedFixups(cmd) => {
+                    cmd.fixups.iter().find(|fixup| fixup.offset == offset)
+                }
+                _ => None,
+            })
+            .collect();
+
+        if !dyldfixup.is_empty() {
+            let fixup = dyldfixup[0];
+            let value = fixup.fixup.clone().rebase_target();
+            if value.is_some() {
+                return value.unwrap();
+            }
+        }
+
+        let mut value = [0u8; 8];
+        macho.buf.seek(SeekFrom::Start(offset)).unwrap();
+        macho.buf.read_exact(&mut value).unwrap();
+        u64::from_le_bytes(value)
     }
 
     pub fn seg_for_vm_addr(
