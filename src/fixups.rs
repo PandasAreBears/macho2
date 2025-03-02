@@ -4,7 +4,10 @@ use bitfield::bitfield;
 use num::FromPrimitive;
 use num_derive::FromPrimitive;
 
-use crate::dyldinfo::{DyldChainedImport, DyldPointerFormat, DyldStartsInSegment};
+use crate::{
+    dyldinfo::{DyldChainedImport, DyldPointerFormat, DyldStartsInSegment},
+    macho::LoadCommand,
+};
 
 #[derive(Debug, FromPrimitive, Clone)]
 pub enum DyldFixupPACKey {
@@ -546,7 +549,7 @@ impl DyldPointerFixup {
         }
     }
 
-    pub fn rebase_target(self) -> Option<u64> {
+    pub fn rebase_offset(self) -> Option<u64> {
         match self {
             DyldPointerFixup::Arm64eRebase24(fixup) => Some(fixup.target as u64),
             DyldPointerFixup::Arm64eAuthRebase24(fixup) => Some(fixup.target as u64),
@@ -559,6 +562,21 @@ impl DyldPointerFixup {
             DyldPointerFixup::Arm64eAuthRebase(fixup) => Some(fixup.target as u64),
             _ => None,
         }
+    }
+
+    pub fn rebase_base_vm_addr(self, lcs: &Vec<LoadCommand>) -> Option<u64> {
+        self.rebase_offset().and_then(|offset| {
+            lcs.iter().find_map(|lc| match lc {
+                LoadCommand::Segment64(seg) => {
+                    if seg.vmaddr <= offset && offset < seg.vmaddr + seg.vmsize {
+                        Some(seg.vmaddr + (offset - seg.fileoff))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+        })
     }
 }
 

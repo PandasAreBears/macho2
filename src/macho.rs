@@ -378,7 +378,7 @@ impl LoadCommand {
 pub struct MachO<T: Seek + Read> {
     pub header: MachHeader,
     pub load_commands: Vec<LoadCommand>,
-    buf: T,
+    pub buf: T,
 }
 
 impl<T: Seek + Read> MachO<T> {

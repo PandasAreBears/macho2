@@ -149,7 +149,7 @@ impl ObjCClass {
                 let (_, cls_addr) = nom::number::complete::le_u64::<_, ()>(cls).unwrap();
                 println!("cls_addr: {:#x}", cls_addr);
 
-                let seg = ObjCInfo::seg_for_vm_addr(segs.clone(), cls_addr).unwrap();
+                let seg = ObjCInfo::seg_for_vm_addr(&segs, cls_addr).unwrap();
 
                 let cls_off = cls_addr - (seg.vmaddr - seg.fileoff);
                 let cls = &all[cls_off as usize..cls_off as usize + 40];
@@ -175,7 +175,7 @@ impl ObjCClass {
 #[derive(Debug)]
 pub struct ObjCSelRef {
     pub sel: String,
-    pub offset: u64,
+    pub vmaddr: u64,
 }
 
 impl ObjCSelRef {
@@ -196,27 +196,37 @@ impl ObjCSelRef {
         };
 
         let nrefs = selrefs.size / 8;
-
         let offsets: Vec<u64> = (0..nrefs)
             .map(|i| selrefs.offset as u64 + i * 8u64)
             .collect();
 
-        offsets
+        let vmaddrs: Vec<u64> = offsets
             .into_iter()
-            .map(|offset| {
-                let selref_offset = ObjCInfo::read_offset(macho, offset);
+            .map(|offset: u64| ObjCInfo::read_offset(macho, offset))
+            .collect();
+
+        let segs: Vec<&SegmentCommand64> = macho
+            .load_commands
+            .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(seg) => Some(seg),
+                _ => None,
+            })
+            .collect();
+
+        vmaddrs
+            .iter()
+            .map(|vmaddr| {
+                let vmaddr = ObjCInfo::file_off_for_vm_addr(&segs, vmaddr.clone()).unwrap();
 
                 // Assume a max selref size of 256 bytes
                 let mut selref_data = vec![0u8; 256];
-                macho.buf.seek(SeekFrom::Start(selref_offset)).unwrap();
+                macho.buf.seek(SeekFrom::Start(vmaddr)).unwrap();
                 macho.buf.read_exact(&mut selref_data).unwrap();
 
                 let (_, s) = string_upto_null_terminator(&selref_data).unwrap();
 
-                ObjCSelRef {
-                    sel: s,
-                    offset: selref_offset,
-                }
+                ObjCSelRef { sel: s, vmaddr }
             })
             .collect()
     }
@@ -258,7 +268,10 @@ impl ObjCInfo {
 
         if !dyldfixup.is_empty() {
             let fixup = dyldfixup[0];
-            let value = fixup.fixup.clone().rebase_target();
+            let value = fixup
+                .fixup
+                .clone()
+                .rebase_base_vm_addr(&macho.load_commands);
             if value.is_some() {
                 return value.unwrap();
             }
@@ -270,10 +283,10 @@ impl ObjCInfo {
         u64::from_le_bytes(value)
     }
 
-    pub fn seg_for_vm_addr(
-        segs: Vec<&SegmentCommand64>,
+    pub fn seg_for_vm_addr<'a>(
+        segs: &'a Vec<&SegmentCommand64>,
         vm_addr: u64,
-    ) -> Option<&SegmentCommand64> {
+    ) -> Option<&'a SegmentCommand64> {
         segs.iter()
             .find(|seg| {
                 let start = seg.vmaddr;
@@ -283,7 +296,7 @@ impl ObjCInfo {
             .map(|v| &**v)
     }
 
-    pub fn file_off_for_vm_addr(segs: Vec<&SegmentCommand64>, vm_addr: u64) -> Option<u64> {
+    pub fn file_off_for_vm_addr(segs: &Vec<&SegmentCommand64>, vm_addr: u64) -> Option<u64> {
         Self::seg_for_vm_addr(segs, vm_addr).map(|seg| {
             let start = seg.vmaddr;
             let file_off = seg.fileoff + (vm_addr - start);
