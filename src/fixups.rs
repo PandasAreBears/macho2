@@ -568,7 +568,9 @@ impl DyldPointerFixup {
         self.rebase_offset().and_then(|offset| {
             lcs.iter().find_map(|lc| match lc {
                 LoadCommand::Segment64(seg) => {
-                    if seg.vmaddr <= offset && offset < seg.vmaddr + seg.vmsize {
+                    // The kernel assumes that every binary's base address
+                    // is in __TEXT.
+                    if seg.segname == "__TEXT" {
                         Some(seg.vmaddr + (offset - seg.fileoff))
                     } else {
                         None

@@ -129,10 +129,15 @@ pub struct ObjCClass {
 }
 
 impl ObjCClass {
-    pub fn parse(segs: Vec<&SegmentCommand64>, all: &[u8]) -> Vec<ObjCClass> {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCClass> {
         // TODO: Some recursive shenanigans to fill out the isa
-        let classlist = segs
+        let classlist = macho
+            .load_commands
             .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(seg) => Some(seg),
+                _ => None,
+            })
             .flat_map(|seg| &seg.sections)
             .find(|sect| sect.sectname == "__objc_classlist");
 
@@ -141,24 +146,45 @@ impl ObjCClass {
             None => return Vec::new(),
         };
 
-        let cls =
-            &all[classlist.offset as usize..classlist.offset as usize + classlist.size as usize];
+        let nrefs = classlist.size / 8;
+        let offsets: Vec<u64> = (0..nrefs)
+            .map(|i| classlist.offset as u64 + i * 8u64)
+            .collect();
 
-        cls.chunks_exact(8)
-            .map(|cls| {
-                let (_, cls_addr) = nom::number::complete::le_u64::<_, ()>(cls).unwrap();
-                println!("cls_addr: {:#x}", cls_addr);
+        let vmaddrs: Vec<u64> = offsets
+            .into_iter()
+            .map(|offset: u64| ObjCInfo::read_offset(macho, offset))
+            .collect();
 
-                let seg = ObjCInfo::seg_for_vm_addr(&segs, cls_addr).unwrap();
+        let segs: Vec<&SegmentCommand64> = macho
+            .load_commands
+            .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(seg) => Some(seg),
+                _ => None,
+            })
+            .collect();
 
-                let cls_off = cls_addr - (seg.vmaddr - seg.fileoff);
-                let cls = &all[cls_off as usize..cls_off as usize + 40];
+        let class_offs: Vec<u64> = vmaddrs
+            .iter()
+            .map(|cls_addr| ObjCInfo::file_off_for_vm_addr(&segs, cls_addr.clone()).unwrap())
+            .collect();
 
-                let (_, isa) = nom::number::complete::le_u64::<_, ()>(&cls[0..8]).unwrap();
-                let (_, superclass) = nom::number::complete::le_u64::<_, ()>(&cls[8..16]).unwrap();
-                let (_, cache) = nom::number::complete::le_u64::<_, ()>(&cls[16..24]).unwrap();
-                let (_, vtable) = nom::number::complete::le_u64::<_, ()>(&cls[24..32]).unwrap();
-                let (_, ro) = nom::number::complete::le_u64::<_, ()>(&cls[32..40]).unwrap();
+        class_offs
+            .iter()
+            .map(|offset| {
+                let mut cls_data = vec![0u8; 40];
+                macho.buf.seek(SeekFrom::Start(*offset)).unwrap();
+                macho.buf.read_exact(&mut cls_data).unwrap();
+
+                let isa = ObjCInfo::read_offset(macho, *offset);
+                // When using chained fixups, `superclass` and `cache` will be BIND types, so
+                // it's not clear how to resolve them. It would be easy to get a raw string of the
+                // class from the chained fixups, but what to do in non-chained fixup binaries?
+                let superclass = ObjCInfo::read_offset(macho, *offset + 8);
+                let cache = ObjCInfo::read_offset(macho, *offset + 16);
+                let vtable = ObjCInfo::read_offset(macho, *offset + 24);
+                let ro = ObjCInfo::read_offset(macho, *offset + 32);
 
                 ObjCClass {
                     isa,
@@ -241,15 +267,14 @@ pub struct ObjCInfo {
 
 impl ObjCInfo {
     pub fn parse<T: Read + Seek>(macho: &mut MachO<T>) -> Option<ObjCInfo> {
-        // let classes = ObjCClass::parse(segs.clone(), all);
+        let classes = ObjCClass::parse(macho);
         // let imageinfo = ObjCImageInfo::parse(segs.clone(), all);
         let selrefs = ObjCSelRef::parse(macho);
 
         Some(ObjCInfo {
             // selrefs,
-            classes: vec![],
+            classes,
             selrefs,
-            // classes: vec![],
             // imageinfo: ,
         })
     }
