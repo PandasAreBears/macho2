@@ -24,6 +24,28 @@ bitfield! {
     pub auth, set_auth: 63;
 }
 
+#[derive(Debug, Clone)]
+pub struct DyldChainedPtrArm64eRebase {
+    pub target: u64,
+    pub high8: u8,
+    pub next: u16,
+    pub bind: bool,
+    pub auth: bool,
+}
+
+impl DyldChainedPtrArm64eRebase {
+    pub fn parse(raw: u64) -> Self {
+        let bf = DyldChainedPtrArm64eRebaseBF(raw);
+        DyldChainedPtrArm64eRebase {
+            target: bf.target(),
+            high8: bf.high8() as u8,
+            next: bf.next() as u16,
+            bind: bf.bind() as bool,
+            auth: bf.auth() as bool,
+        }
+    }
+}
+
 bitfield! {
     pub struct DyldChainedPtrArm64eBindBF(u64);
     impl Debug;
@@ -33,6 +55,28 @@ bitfield! {
     pub next, set_next: 61, 51;
     pub bind, set_bind: 62;
     pub auth, set_auth: 63;
+}
+
+#[derive(Debug, Clone)]
+pub struct DyldChainedPtrArm64eBind {
+    pub ordinal: String,
+    pub addend: u16,
+    pub next: u16,
+    pub bind: bool,
+    pub auth: bool,
+}
+
+impl DyldChainedPtrArm64eBind {
+    pub fn parse(raw: u64, ordinals: &Vec<String>) -> Self {
+        let bf = DyldChainedPtrArm64eBindBF(raw);
+        DyldChainedPtrArm64eBind {
+            ordinal: (*ordinals.get(bf.ordinal() as usize).unwrap().clone()).to_string(),
+            addend: bf.addend() as u16,
+            next: bf.next() as u16,
+            bind: bf.bind() as bool,
+            auth: bf.auth() as bool,
+        }
+    }
 }
 
 bitfield! {
@@ -45,6 +89,32 @@ bitfield! {
     pub next, set_next: 61, 51;
     pub bind, set_bind: 62;
     pub auth, set_auth: 63;
+}
+
+#[derive(Debug, Clone)]
+pub struct DyldChainedPtrArm64eAuthRebase {
+    pub target: u32,
+    pub diversity: u16,
+    pub addr_div: bool,
+    pub key: DyldFixupPACKey,
+    pub next: u16,
+    pub bind: bool,
+    pub auth: bool,
+}
+
+impl DyldChainedPtrArm64eAuthRebase {
+    pub fn parse(raw: u64) -> Self {
+        let bf = DyldChainedPtrArm64eAuthRebaseBF(raw);
+        DyldChainedPtrArm64eAuthRebase {
+            target: bf.target() as u32,
+            diversity: bf.diversity() as u16,
+            addr_div: bf.addr_div() as bool,
+            key: DyldFixupPACKey::from_u8(bf.key() as u8).unwrap(),
+            next: bf.next() as u16,
+            bind: bf.bind() as bool,
+            auth: bf.auth() as bool,
+        }
+    }
 }
 
 bitfield! {
@@ -60,6 +130,32 @@ bitfield! {
     pub auth, set_auth: 63;
 }
 
+#[derive(Debug, Clone)]
+pub struct DyldChainedPtrArm64eAuthBind {
+    pub ordinal: String,
+    pub diversity: u8,
+    pub addr_div: bool,
+    pub key: DyldFixupPACKey,
+    pub next: u16,
+    pub bind: bool,
+    pub auth: bool,
+}
+
+impl DyldChainedPtrArm64eAuthBind {
+    pub fn parse(raw: u64, ordinals: &Vec<String>) -> Self {
+        let bf = DyldChainedPtrArm64eAuthBindBF(raw);
+        DyldChainedPtrArm64eAuthBind {
+            ordinal: (*ordinals.get(bf.ordinal() as usize).unwrap().clone()).to_string(),
+            diversity: bf.diversity() as u8,
+            addr_div: bf.addr_div() as bool,
+            key: DyldFixupPACKey::from_u8(bf.key() as u8).unwrap(),
+            next: bf.next() as u16,
+            bind: bf.bind() as bool,
+            auth: bf.auth() as bool,
+        }
+    }
+}
+
 bitfield! {
     pub struct DyldChainedPtr64RebaseBF(u64);
     impl Debug;
@@ -68,6 +164,26 @@ bitfield! {
     pub reserved, set_reserved: 50, 44;
     pub next, set_next: 62, 51;
     pub bind, set_bind: 63;
+}
+
+#[derive(Debug, Clone)]
+pub struct DyldChainedPtr64Rebase {
+    pub target: u64,
+    pub high8: u8,
+    pub next: u16,
+    pub bind: bool,
+}
+
+impl DyldChainedPtr64Rebase {
+    pub fn parse(raw: u64) -> Self {
+        let bf = DyldChainedPtr64RebaseBF(raw);
+        DyldChainedPtr64Rebase {
+            target: bf.target(),
+            high8: bf.high8() as u8,
+            next: bf.next() as u16,
+            bind: bf.bind() as bool,
+        }
+    }
 }
 
 bitfield! {
@@ -91,8 +207,6 @@ pub struct DyldChainedPtrArm64eRebase24 {
 }
 
 impl DyldChainedPtrArm64eRebase24 {
-    pub const STRIDE: u64 = 8;
-
     pub fn parse(raw: u64) -> Self {
         let bf = DyldChainedPtrArm64eRebase24BF(raw);
         DyldChainedPtrArm64eRebase24 {
@@ -130,8 +244,6 @@ pub struct DyldChainedPtrArm64eAuthRebase24 {
 }
 
 impl DyldChainedPtrArm64eAuthRebase24 {
-    pub const STRIDE: u64 = 8;
-
     pub fn parse(raw: u64) -> Self {
         let bf = DyldChainedPtrArm64eAuthRebase24BF(raw);
         DyldChainedPtrArm64eAuthRebase24 {
@@ -167,8 +279,6 @@ pub struct DyldChainedPtrArm64eBind24 {
 }
 
 impl DyldChainedPtrArm64eBind24 {
-    pub const STRIDE: u64 = 8;
-
     pub fn parse(raw: u64, ordinals: &Vec<String>) -> Self {
         let bf = DyldChainedPtrArm64eBind24BF(raw);
         DyldChainedPtrArm64eBind24 {
@@ -206,8 +316,6 @@ pub struct DyldChainedPtrArm64eAuthBind24 {
 }
 
 impl DyldChainedPtrArm64eAuthBind24 {
-    pub const STRIDE: u64 = 8;
-
     pub fn parse(raw: u64, ordinals: &Vec<String>) -> Self {
         let bf = DyldChainedPtrArm64eAuthBind24BF(raw);
         DyldChainedPtrArm64eAuthBind24 {
@@ -232,6 +340,26 @@ bitfield! {
     pub bind, set_bind: 63;
 }
 
+#[derive(Debug, Clone)]
+pub struct DyldChainedPtr64Bind {
+    pub ordinal: String,
+    pub addend: u8,
+    pub next: u16,
+    pub bind: bool,
+}
+
+impl DyldChainedPtr64Bind {
+    pub fn parse(raw: u64, ordinals: &Vec<String>) -> Self {
+        let bf = DyldChainedPtr64BindBF(raw);
+        DyldChainedPtr64Bind {
+            ordinal: (*ordinals.get(bf.ordinal() as usize).unwrap().clone()).to_string(),
+            addend: bf.addend() as u8,
+            next: bf.next() as u16,
+            bind: bf.bind() as bool,
+        }
+    }
+}
+
 bitfield! {
     pub struct DyldChainedPtr64KernelCacheRebaseBF(u64);
     impl Debug;
@@ -244,12 +372,56 @@ bitfield! {
     pub is_auth, set_is_auth: 63;
 }
 
+#[derive(Debug, Clone)]
+pub struct DyldChainedPtr64KernelCacheRebase {
+    pub target: u32,
+    pub cache_level: u8,
+    pub diversity: u16,
+    pub addr_div: bool,
+    pub key: DyldFixupPACKey,
+    pub next: u16,
+    pub is_auth: bool,
+}
+
+impl DyldChainedPtr64KernelCacheRebase {
+    pub fn parse(raw: u64) -> Self {
+        let bf = DyldChainedPtr64KernelCacheRebaseBF(raw);
+        DyldChainedPtr64KernelCacheRebase {
+            target: bf.target() as u32,
+            cache_level: bf.cache_level() as u8,
+            diversity: bf.diversity() as u16,
+            addr_div: bf.addr_div() as bool,
+            key: DyldFixupPACKey::from_u8(bf.key() as u8).unwrap(),
+            next: bf.next() as u16,
+            is_auth: bf.is_auth() as bool,
+        }
+    }
+}
+
 bitfield! {
     pub struct DyldChainedPtr32RebaseBF(u32);
     impl Debug;
     pub target, set_target: 25, 0;
     pub next, set_next: 30, 26;
     pub bind, set_bind: 31;
+}
+
+#[derive(Debug, Clone)]
+pub struct DyldChainedPtr32Rebase {
+    pub target: u32,
+    pub next: u8,
+    pub bind: bool,
+}
+
+impl DyldChainedPtr32Rebase {
+    pub fn parse(raw: u32) -> Self {
+        let bf = DyldChainedPtr32RebaseBF(raw);
+        DyldChainedPtr32Rebase {
+            target: bf.target(),
+            next: bf.next() as u8,
+            bind: bf.bind() as bool,
+        }
+    }
 }
 
 bitfield! {
@@ -261,11 +433,47 @@ bitfield! {
     pub bind, set_bind: 31;
 }
 
+#[derive(Debug, Clone)]
+pub struct DyldChainedPtr32Bind {
+    pub ordinal: String,
+    pub addend: u8,
+    pub next: u8,
+    pub bind: bool,
+}
+
+impl DyldChainedPtr32Bind {
+    pub fn parse(raw: u32, ordinals: &Vec<String>) -> Self {
+        let bf = DyldChainedPtr32BindBF(raw);
+        DyldChainedPtr32Bind {
+            ordinal: (*ordinals.get(bf.ordinal() as usize).unwrap().clone()).to_string(),
+            addend: bf.addend() as u8,
+            next: bf.next() as u8,
+            bind: bf.bind() as bool,
+        }
+    }
+}
+
 bitfield! {
     pub struct DyldChainedPtr32CacheRebaseBF(u32);
     impl Debug;
     pub target, set_target: 29, 0;
     pub next, set_next: 31, 30;
+}
+
+#[derive(Debug, Clone)]
+pub struct DyldChainedPtr32CacheRebase {
+    pub target: u32,
+    pub next: u8,
+}
+
+impl DyldChainedPtr32CacheRebase {
+    pub fn parse(raw: u32) -> Self {
+        let bf = DyldChainedPtr32CacheRebaseBF(raw);
+        DyldChainedPtr32CacheRebase {
+            target: bf.target(),
+            next: bf.next() as u8,
+        }
+    }
 }
 
 bitfield! {
@@ -275,51 +483,198 @@ bitfield! {
     pub next, set_next: 31, 26;
 }
 
+#[derive(Debug, Clone)]
+pub struct DyldChainedPtr32FirmwareRebase {
+    pub target: u32,
+    pub next: u8,
+}
+
+impl DyldChainedPtr32FirmwareRebase {
+    pub fn parse(raw: u32) -> Self {
+        let bf = DyldChainedPtr32FirmwareRebaseBF(raw);
+        DyldChainedPtr32FirmwareRebase {
+            target: bf.target(),
+            next: bf.next() as u8,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum DyldPointerFixup {
     Arm64eRebase24(DyldChainedPtrArm64eRebase24),
     Arm64eAuthRebase24(DyldChainedPtrArm64eAuthRebase24),
     Arm64eBind24(DyldChainedPtrArm64eBind24),
     Arm64eAuthBind24(DyldChainedPtrArm64eAuthBind24),
+    Ptr32Rebase(DyldChainedPtr32Rebase),
+    Ptr32Bind(DyldChainedPtr32Bind),
+    Ptr32CacheRebase(DyldChainedPtr32CacheRebase),
+    Ptr32FirmwareRebase(DyldChainedPtr32FirmwareRebase),
+    Ptr64Rebase(DyldChainedPtr64Rebase),
+    Ptr64Bind(DyldChainedPtr64Bind),
+    Ptr64KernelCacheRebase(DyldChainedPtr64KernelCacheRebase),
+    Arm64eRebase(DyldChainedPtrArm64eRebase),
+    Arm64eAuthRebase(DyldChainedPtrArm64eAuthRebase),
+    Arm64eBind(DyldChainedPtrArm64eBind),
+    Arm64eAuthBind(DyldChainedPtrArm64eAuthBind),
 }
 
 impl DyldPointerFixup {
     pub fn parse<T: Seek + Read>(
         buf: &mut T,
         offset: u64,
-        _ptr_format: &DyldPointerFormat,
+        ptr_format: &DyldPointerFormat,
         ordinals: &Vec<String>,
     ) -> (Self, u64) {
         let mut fixup = vec![0u8; 8];
         buf.seek(SeekFrom::Start(offset)).unwrap();
         buf.read_exact(&mut fixup).unwrap();
         let raw = u64::from_le_bytes(fixup.as_slice().try_into().unwrap());
-        let (fixup, stride) = DyldPointerFixup::parse_userland24(raw, &ordinals);
+
+        let (fixup, stride) = match ptr_format {
+            DyldPointerFormat::Ptr64KernelCache | DyldPointerFormat::X86_64KernelCache => {
+                DyldPointerFixup::parse_ptr64_kernel_cache_rebase(raw, ptr_format)
+            }
+            DyldPointerFormat::Ptr64 | DyldPointerFormat::Ptr64Offset => {
+                DyldPointerFixup::parse_ptr64(raw, ptr_format, ordinals)
+            }
+            DyldPointerFormat::Ptr32Firmware => {
+                DyldPointerFixup::parse_ptr32_firmware_rebase(raw as u32, ptr_format)
+            }
+            DyldPointerFormat::Ptr32Cache => {
+                DyldPointerFixup::parse_ptr32_cache_rebase(raw as u32, ptr_format)
+            }
+            DyldPointerFormat::Ptr32 => DyldPointerFixup::parse_ptr32(raw, ptr_format, ordinals),
+            DyldPointerFormat::Arm64eUserland24 => {
+                DyldPointerFixup::parse_arm64euserland24(raw, ptr_format, ordinals)
+            }
+            DyldPointerFormat::Arm64e
+            | DyldPointerFormat::Arm64eUserland
+            | DyldPointerFormat::Arm64eKernel
+            | DyldPointerFormat::Arm64eFirmware => {
+                DyldPointerFixup::parse_ptr64_arm64e(raw, ptr_format, ordinals)
+            }
+            DyldPointerFormat::Arm64eSharedCache => todo!(), // TODO: What is the format of this?!
+        };
         (fixup, offset + stride)
     }
 
-    fn parse_userland24(raw: u64, ordinals: &Vec<String>) -> (DyldPointerFixup, u64) {
+    fn parse_ptr64_arm64e(
+        raw: u64,
+        format: &DyldPointerFormat,
+        ordinals: &Vec<String>,
+    ) -> (DyldPointerFixup, u64) {
+        let is_bind = (raw >> 62 & 1) == 1;
+        let is_auth = (raw >> 63 & 1) == 1;
+
+        if is_bind {
+            if is_auth {
+                let fixup = DyldChainedPtrArm64eAuthBind::parse(raw, ordinals);
+                let next = format.stride() * fixup.next as u64;
+                (DyldPointerFixup::Arm64eAuthBind(fixup), next)
+            } else {
+                let fixup = DyldChainedPtrArm64eBind::parse(raw, ordinals);
+                let next = format.stride() * fixup.next as u64;
+                (DyldPointerFixup::Arm64eBind(fixup), next)
+            }
+        } else {
+            if is_auth {
+                let fixup = DyldChainedPtrArm64eAuthRebase::parse(raw);
+                let next = format.stride() * fixup.next as u64;
+                (DyldPointerFixup::Arm64eAuthRebase(fixup), next)
+            } else {
+                let fixup = DyldChainedPtrArm64eRebase::parse(raw);
+                let next = format.stride() * fixup.next as u64;
+                (DyldPointerFixup::Arm64eRebase(fixup), next)
+            }
+        }
+    }
+
+    fn parse_ptr64_kernel_cache_rebase(
+        raw: u64,
+        format: &DyldPointerFormat,
+    ) -> (DyldPointerFixup, u64) {
+        let fixup = DyldChainedPtr64KernelCacheRebase::parse(raw);
+        let next = format.stride() * fixup.next as u64;
+        (DyldPointerFixup::Ptr64KernelCacheRebase(fixup), next)
+    }
+
+    fn parse_ptr64(
+        raw: u64,
+        format: &DyldPointerFormat,
+        ordinals: &Vec<String>,
+    ) -> (DyldPointerFixup, u64) {
+        let is_bind = (raw >> 63 & 1) == 1;
+
+        if is_bind {
+            let fixup = DyldChainedPtr64Bind::parse(raw, ordinals);
+            let next = format.stride() * fixup.next as u64;
+            (DyldPointerFixup::Ptr64Bind(fixup), next)
+        } else {
+            let fixup = DyldChainedPtr64Rebase::parse(raw);
+            let next = format.stride() * fixup.next as u64;
+            (DyldPointerFixup::Ptr64Rebase(fixup), next)
+        }
+    }
+
+    fn parse_ptr32_firmware_rebase(
+        raw: u32,
+        format: &DyldPointerFormat,
+    ) -> (DyldPointerFixup, u64) {
+        let fixup = DyldChainedPtr32FirmwareRebase::parse(raw);
+        let next = format.stride() * fixup.next as u64;
+        (DyldPointerFixup::Ptr32FirmwareRebase(fixup), next)
+    }
+
+    fn parse_ptr32_cache_rebase(raw: u32, format: &DyldPointerFormat) -> (DyldPointerFixup, u64) {
+        let fixup = DyldChainedPtr32CacheRebase::parse(raw);
+        let next = format.stride() * fixup.next as u64;
+        (DyldPointerFixup::Ptr32CacheRebase(fixup), next)
+    }
+
+    fn parse_ptr32(
+        raw: u64,
+        format: &DyldPointerFormat,
+        ordinals: &Vec<String>,
+    ) -> (DyldPointerFixup, u64) {
+        let is_bind = (raw >> 31 & 1) == 1;
+
+        if is_bind {
+            let fixup = DyldChainedPtr32Bind::parse(raw as u32, ordinals);
+            let next = format.stride() * fixup.next as u64;
+            (DyldPointerFixup::Ptr32Bind(fixup), next)
+        } else {
+            let fixup = DyldChainedPtr32Rebase::parse(raw as u32);
+            let next = format.stride() * fixup.next as u64;
+            (DyldPointerFixup::Ptr32Rebase(fixup), next)
+        }
+    }
+
+    fn parse_arm64euserland24(
+        raw: u64,
+        format: &DyldPointerFormat,
+        ordinals: &Vec<String>,
+    ) -> (DyldPointerFixup, u64) {
         let is_bind = (raw >> 62 & 1) == 1;
         let is_auth = (raw >> 63 & 1) == 1;
 
         if is_bind {
             if is_auth {
                 let fixup = DyldChainedPtrArm64eAuthBind24::parse(raw, ordinals);
-                let next = DyldChainedPtrArm64eAuthBind24::STRIDE * fixup.next as u64;
+                let next = format.stride() * fixup.next as u64;
                 (DyldPointerFixup::Arm64eAuthBind24(fixup), next)
             } else {
                 let fixup = DyldChainedPtrArm64eBind24::parse(raw, ordinals);
-                let next = DyldChainedPtrArm64eBind24::STRIDE * fixup.next as u64;
+                let next = format.stride() * fixup.next as u64;
                 (DyldPointerFixup::Arm64eBind24(fixup), next)
             }
         } else {
             if is_auth {
                 let fixup = DyldChainedPtrArm64eAuthRebase24::parse(raw);
-                let next = DyldChainedPtrArm64eAuthRebase24::STRIDE * fixup.next as u64;
+                let next = format.stride() * fixup.next as u64;
                 (DyldPointerFixup::Arm64eAuthRebase24(fixup), next)
             } else {
                 let fixup = DyldChainedPtrArm64eRebase24::parse(raw);
-                let next = DyldChainedPtrArm64eRebase24::STRIDE * fixup.next as u64;
+                let next = format.stride() * fixup.next as u64;
                 (DyldPointerFixup::Arm64eRebase24(fixup), next)
             }
         }

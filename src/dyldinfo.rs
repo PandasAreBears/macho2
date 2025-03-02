@@ -645,7 +645,7 @@ impl DyldStartsInImage {
 }
 
 #[repr(u16)]
-#[derive(Debug, FromPrimitive)]
+#[derive(Debug, FromPrimitive, Clone, Copy)]
 pub enum DyldPointerFormat {
     Arm64e = 1,
     Ptr64 = 2,
@@ -672,6 +672,24 @@ impl DyldPointerFormat {
                 bytes,
                 nom::error::ErrorKind::Tag,
             ))),
+        }
+    }
+
+    pub fn stride(self) -> u64 {
+        match self {
+            DyldPointerFormat::Arm64e => 8,
+            DyldPointerFormat::Arm64eUserland24 => 8,
+            DyldPointerFormat::Arm64eUserland => 8,
+            DyldPointerFormat::Arm64eSharedCache => 4,
+            DyldPointerFormat::Ptr64 => 4,
+            DyldPointerFormat::Ptr32 => 4,
+            DyldPointerFormat::Ptr32Cache => 4,
+            DyldPointerFormat::Ptr32Firmware => 4,
+            DyldPointerFormat::Ptr64Offset => 4,
+            DyldPointerFormat::Arm64eKernel => 4,
+            DyldPointerFormat::Ptr64KernelCache => 4,
+            DyldPointerFormat::Arm64eFirmware => 4,
+            DyldPointerFormat::X86_64KernelCache => 4,
         }
     }
 }
