@@ -3,11 +3,7 @@ use std::io::{Read, Seek, SeekFrom};
 
 use num_derive::FromPrimitive;
 
-use crate::{
-    fixups::DyldFixup,
-    macho::{LoadCommand, MachO},
-    segment::SegmentCommand64,
-};
+use crate::macho::{LoadCommand, MachO, MachOResult};
 
 bitflags::bitflags! {
     #[derive(Debug)]
@@ -143,17 +139,20 @@ impl ObjCMethodList {
         macho.buf.read_exact(&mut count).unwrap();
         let count = u32::from_le_bytes(count.try_into().unwrap());
 
-        let mut methods = Vec::new();
-        if (size_and_flags.flags & ObjCMethodListFlags::SMALL_METHOD_LIST)
+        let methods = if (size_and_flags.flags & ObjCMethodListFlags::SMALL_METHOD_LIST)
             == ObjCMethodListFlags::SMALL_METHOD_LIST
         {
-            let mut method_offset = offset + 8;
-            for _ in 0..count {
-                let method = ObjCMethod::parse_small(macho, method_offset);
-                methods.push(method);
-                method_offset += 12;
-            }
-        }
+            let mut off = offset + 8;
+            (0..count)
+                .filter_map(|_| {
+                    let method = ObjCMethod::parse_small(macho, off);
+                    off += 12;
+                    method.ok()
+                })
+                .collect::<Vec<ObjCMethod>>()
+        } else {
+            Vec::new()
+        };
 
         ObjCMethodList {
             size_and_flags,
@@ -171,7 +170,10 @@ pub struct ObjCMethod {
 }
 
 impl ObjCMethod {
-    pub fn parse_small<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> ObjCMethod {
+    pub fn parse_small<T: Read + Seek>(
+        macho: &mut MachO<T>,
+        offset: u64,
+    ) -> MachOResult<ObjCMethod> {
         let mut data = vec![0u8; 12];
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
@@ -186,25 +188,16 @@ impl ObjCMethod {
 
         // TODO: Clean this up so that machos with invalid objc info, i.e. those
         // produced by dsc_extractor, don't crash
-        let sel_vmaddr = ObjCInfo::read_offset(macho, name_off as u64);
-        let segs = macho
-            .load_commands
-            .iter()
-            .filter_map(|lc| match lc {
-                LoadCommand::Segment64(seg) => Some(seg),
-                _ => None,
-            })
-            .collect();
-        let sel_off = ObjCInfo::file_off_for_vm_addr(&segs, sel_vmaddr).unwrap();
-        let name = ObjCInfo::read_string(macho, sel_off);
+        let sel_vmaddr = macho.read_offset_u64(name_off as u64)?;
+        let sel_off = macho.vm_addr_to_offset(sel_vmaddr)?;
+        let name = macho.read_null_terminated_string(sel_off)?;
+        let types = macho.read_null_terminated_string(types_off as u64)?;
 
-        let types = ObjCInfo::read_string(macho, types_off as u64);
-
-        ObjCMethod {
+        Ok(ObjCMethod {
             name,
             types,
             imp: imp_off as u64,
-        }
+        })
     }
 }
 
@@ -248,17 +241,8 @@ pub struct ObjCClassRO {
 }
 
 impl ObjCClassRO {
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, vmaddr: u64) -> ObjCClassRO {
-        let segs = macho
-            .load_commands
-            .iter()
-            .filter_map(|lc| match lc {
-                LoadCommand::Segment64(seg) => Some(seg),
-                _ => None,
-            })
-            .collect();
-
-        let file_off = ObjCInfo::file_off_for_vm_addr(&segs, vmaddr).unwrap();
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, vmaddr: u64) -> MachOResult<ObjCClassRO> {
+        let file_off = macho.vm_addr_to_offset(vmaddr).unwrap();
         let mut ro_data = vec![0u8; 72];
         macho.buf.seek(SeekFrom::Start(file_off)).unwrap();
         macho.buf.read_exact(&mut ro_data).unwrap();
@@ -268,33 +252,24 @@ impl ObjCClassRO {
         let instance_size = u32::from_le_bytes(ro_data[8..12].try_into().unwrap()) as u32;
         let reserved = u32::from_le_bytes(ro_data[12..16].try_into().unwrap()) as u32;
         let ivar_layout = u64::from_le_bytes(ro_data[16..24].try_into().unwrap()) as u64;
-        let name = ObjCInfo::read_offset(macho, file_off + 24);
-        let base_methods = ObjCInfo::read_offset(macho, file_off + 32);
-        let base_protocols = ObjCInfo::read_offset(macho, file_off + 40);
-        let ivars = ObjCInfo::read_offset(macho, file_off + 48);
+        let name = macho.read_offset_u64(file_off + 24)?;
+        let base_methods = macho.read_offset_u64(file_off + 32)?;
+        let base_protocols = macho.read_offset_u64(file_off + 40)?;
+        let ivars = macho.read_offset_u64(file_off + 48)?;
         let weak_ivar_layout = u64::from_le_bytes(ro_data[56..64].try_into().unwrap());
         let base_properties = u64::from_le_bytes(ro_data[64..72].try_into().unwrap());
 
-        let segs = macho
-            .load_commands
-            .iter()
-            .filter_map(|lc| match lc {
-                LoadCommand::Segment64(seg) => Some(seg),
-                _ => None,
-            })
-            .collect();
-
-        let name_off = ObjCInfo::file_off_for_vm_addr(&segs, name).unwrap();
-        let base_methods_off = ObjCInfo::file_off_for_vm_addr(&segs, base_methods);
-        let base_methods = if base_methods_off.is_some() {
-            Some(ObjCMethodList::parse(macho, base_methods_off.unwrap()))
+        let name_off = macho.vm_addr_to_offset(name).unwrap();
+        let base_methods_off = macho.vm_addr_to_offset(base_methods)?;
+        let base_methods = if base_methods_off != 0 {
+            Some(ObjCMethodList::parse(macho, base_methods_off))
         } else {
             None
         };
 
-        let name_str = ObjCInfo::read_string(macho, name_off);
+        let name_str = macho.read_null_terminated_string(name_off)?;
 
-        ObjCClassRO {
+        Ok(ObjCClassRO {
             flags,
             instance_start,
             instance_size,
@@ -306,7 +281,7 @@ impl ObjCClassRO {
             ivars,
             weak_ivar_layout,
             base_properties,
-        }
+        })
     }
 }
 
@@ -344,21 +319,12 @@ impl ObjCClass {
 
         let vmaddrs: Vec<u64> = offsets
             .into_iter()
-            .map(|offset: u64| ObjCInfo::read_offset(macho, offset))
-            .collect();
-
-        let segs: Vec<&SegmentCommand64> = macho
-            .load_commands
-            .iter()
-            .filter_map(|lc| match lc {
-                LoadCommand::Segment64(seg) => Some(seg),
-                _ => None,
-            })
+            .filter_map(|offset: u64| macho.read_offset_u64(offset).ok())
             .collect();
 
         let class_offs: Vec<u64> = vmaddrs
             .iter()
-            .map(|cls_addr| ObjCInfo::file_off_for_vm_addr(&segs, cls_addr.clone()).unwrap())
+            .filter_map(|cls_addr| macho.vm_addr_to_offset(cls_addr.clone()).ok())
             .collect();
 
         class_offs
@@ -368,15 +334,15 @@ impl ObjCClass {
                 macho.buf.seek(SeekFrom::Start(*offset)).unwrap();
                 macho.buf.read_exact(&mut cls_data).unwrap();
 
-                let isa = ObjCInfo::read_offset(macho, *offset);
+                let isa = macho.read_offset_u64(*offset).unwrap();
                 // When using chained fixups, `superclass` and `cache` will be BIND types, so
                 // it's not clear how to resolve them. It would be easy to get a raw string of the
                 // class from the chained fixups, but what to do in non-chained fixup binaries?
-                let superclass = ObjCInfo::read_offset(macho, *offset + 8);
-                let cache = ObjCInfo::read_offset(macho, *offset + 16);
-                let vtable = ObjCInfo::read_offset(macho, *offset + 24);
-                let ro_vmaddr = ObjCInfo::read_offset(macho, *offset + 32);
-                let ro = ObjCClassRO::parse(macho, ro_vmaddr);
+                let superclass = macho.read_offset_u64(*offset + 8).unwrap();
+                let cache = macho.read_offset_u64(*offset + 16).unwrap();
+                let vtable = macho.read_offset_u64(*offset + 24).unwrap();
+                let ro_vmaddr = macho.read_offset_u64(*offset + 32).unwrap();
+                let ro = ObjCClassRO::parse(macho, ro_vmaddr).unwrap();
 
                 ObjCClass {
                     isa,
@@ -420,28 +386,19 @@ impl ObjCSelRef {
 
         let vmaddrs: Vec<u64> = offsets
             .into_iter()
-            .map(|offset: u64| ObjCInfo::read_offset(macho, offset))
-            .collect();
-
-        let segs: Vec<&SegmentCommand64> = macho
-            .load_commands
-            .iter()
-            .filter_map(|lc| match lc {
-                LoadCommand::Segment64(seg) => Some(seg),
-                _ => None,
-            })
+            .filter_map(|offset: u64| macho.read_offset_u64(offset).ok())
             .collect();
 
         let sel_offs: Vec<u64> = vmaddrs
             .iter()
-            .map(|vmaddr| ObjCInfo::file_off_for_vm_addr(&segs, vmaddr.clone()).unwrap())
+            .filter_map(|vmaddr| macho.vm_addr_to_offset(vmaddr.clone()).ok())
             .collect();
 
         sel_offs
             .iter()
             .zip(vmaddrs.iter())
             .map(|(offset, vmaddr)| {
-                let sel = ObjCInfo::read_string(macho, *offset);
+                let sel = macho.read_null_terminated_string(*offset).unwrap();
 
                 ObjCSelRef {
                     sel,
@@ -469,97 +426,6 @@ impl ObjCInfo {
             classes,
             selrefs,
             imageinfo,
-        })
-    }
-
-    fn read_offset<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> u64 {
-        if offset == 0 {
-            return 0;
-        }
-
-        let dyldfixup: Vec<&DyldFixup> = macho
-            .load_commands
-            .iter()
-            .filter_map(|lc| match lc {
-                LoadCommand::DyldChainedFixups(cmd) => {
-                    cmd.fixups.iter().find(|fixup| fixup.offset == offset)
-                }
-                _ => None,
-            })
-            .collect();
-
-        if !dyldfixup.is_empty() {
-            let fixup = dyldfixup[0];
-            let value = fixup
-                .fixup
-                .clone()
-                .rebase_base_vm_addr(&macho.load_commands);
-            if value.is_some() {
-                return value.unwrap();
-            }
-        }
-
-        let mut value = [0u8; 8];
-        macho.buf.seek(SeekFrom::Start(offset)).unwrap();
-        macho.buf.read_exact(&mut value).unwrap();
-        u64::from_le_bytes(value)
-    }
-
-    fn read_string<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> String {
-        if offset == 0 {
-            return String::new();
-        }
-
-        let mut string_data = Vec::new();
-        let mut byte = [0u8; 1];
-        let mut offset = offset;
-        loop {
-            macho.buf.seek(SeekFrom::Start(offset)).unwrap();
-            macho.buf.read_exact(&mut byte).unwrap();
-            if byte[0] == 0 {
-                break;
-            }
-            string_data.push(byte[0]);
-            offset += 1;
-        }
-
-        String::from_utf8(string_data).unwrap()
-    }
-
-    pub fn seg_for_vm_addr<'a>(
-        segs: &'a Vec<&SegmentCommand64>,
-        vm_addr: u64,
-    ) -> Option<&'a SegmentCommand64> {
-        segs.iter()
-            .find(|seg| {
-                let start = seg.vmaddr;
-                let end = start + seg.vmsize;
-                start <= vm_addr && vm_addr < end
-            })
-            .map(|v| &**v)
-    }
-
-    pub fn seg_for_vm_offset<'a>(
-        segs: &'a Vec<&SegmentCommand64>,
-        offset: u64,
-    ) -> Option<&'a SegmentCommand64> {
-        segs.iter()
-            .find(|seg| {
-                let start = seg.fileoff;
-                let end = start + seg.filesize;
-                start <= offset && offset < end
-            })
-            .map(|v| &**v)
-    }
-
-    pub fn file_off_for_vm_addr(segs: &Vec<&SegmentCommand64>, vm_addr: u64) -> Option<u64> {
-        if vm_addr == 0 {
-            return None;
-        }
-        Self::seg_for_vm_addr(segs, vm_addr).map(|seg| {
-            let start = seg.vmaddr;
-            let file_off = seg.fileoff + (vm_addr - start);
-            file_off
         })
     }
 }

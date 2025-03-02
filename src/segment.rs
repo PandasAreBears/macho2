@@ -182,7 +182,7 @@ impl Section32 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Section64 {
     pub sectname: String,
     pub segname: String,
@@ -311,7 +311,7 @@ impl SegmentCommand32 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SegmentCommand64 {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,

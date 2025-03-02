@@ -15,6 +15,7 @@ use crate::dylib::{
 };
 use crate::fat::{FatArch, FatHeader, FatMagic};
 use crate::file_subset::FileSubset;
+use crate::fixups::DyldFixup;
 use crate::header::{MHMagic, MachHeader};
 
 use crate::load_command::{self, LCLoadCommand, LoadCommandBase};
@@ -379,6 +380,7 @@ pub struct MachO<T: Seek + Read> {
     pub header: MachHeader,
     pub load_commands: Vec<LoadCommand>,
     pub buf: T,
+    segs: Vec<SegmentCommand64>,
 }
 
 impl<T: Seek + Read> MachO<T> {
@@ -397,12 +399,145 @@ impl<T: Seek + Read> MachO<T> {
 
     pub fn parse(mut buf: T) -> MachOResult<Self> {
         let header = MachHeader::parse(&mut buf)?;
+        let load_commands = LoadCommand::parse_all(&mut buf, header)?;
+
+        let segs: Vec<SegmentCommand64> = load_commands
+            .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(cmd) => Some(cmd),
+                _ => None,
+            })
+            .cloned()
+            .collect();
 
         Ok(Self {
             header,
-            load_commands: LoadCommand::parse_all(&mut buf, header)?,
+            load_commands,
             buf,
+            segs,
         })
+    }
+
+    pub fn is_valid_offset(&self, offset: u64) -> bool {
+        self.segs
+            .iter()
+            .find(|seg| seg.fileoff <= offset && offset < seg.fileoff + seg.filesize)
+            .is_some()
+    }
+
+    pub fn read_offset_u64(&mut self, offset: u64) -> MachOResult<u64> {
+        if !self.is_valid_offset(offset) {
+            return Err(MachOErr {
+                detail: format!("Invalid offset: 0x{:x}", offset),
+            });
+        }
+
+        // When the offset is a dyld fixup, it can be 1. a rebase, which is easy
+        // to satisfy by adding the base VM address, or 2. a bind, which is less obvious
+        // what to do here.
+        let dyldfixup: Vec<&DyldFixup> = self
+            .load_commands
+            .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::DyldChainedFixups(cmd) => {
+                    cmd.fixups.iter().find(|fixup| fixup.offset == offset)
+                }
+                _ => None,
+            })
+            .collect();
+
+        if !dyldfixup.is_empty() {
+            let fixup = dyldfixup[0];
+            let value = fixup.fixup.clone().rebase_base_vm_addr(&self.load_commands);
+            if value.is_some() {
+                return Ok(value.unwrap());
+            }
+        }
+
+        let mut value = [0u8; 8];
+        self.buf.seek(SeekFrom::Start(offset)).unwrap();
+        self.buf.read_exact(&mut value).unwrap();
+        Ok(u64::from_le_bytes(value))
+    }
+
+    pub fn read_offset_u32(&mut self, offset: u64) -> MachOResult<u32> {
+        if !self.is_valid_offset(offset) {
+            return Err(MachOErr {
+                detail: format!("Invalid offset: 0x{:x}", offset),
+            });
+        }
+
+        let mut value = [0u8; 4];
+        self.buf.seek(SeekFrom::Start(offset)).unwrap();
+        self.buf.read_exact(&mut value).unwrap();
+        Ok(u32::from_le_bytes(value))
+    }
+
+    pub fn vm_addr_to_offset(&self, vm_addr: u64) -> MachOResult<u64> {
+        let seg = self
+            .segs
+            .iter()
+            .find(|seg| seg.vmaddr <= vm_addr && vm_addr < seg.vmaddr + seg.vmsize)
+            .ok_or(MachOErr {
+                detail: "Invalid vm addr.".to_string(),
+            })?;
+
+        let offset = vm_addr - seg.vmaddr + seg.fileoff;
+        Ok(offset)
+    }
+
+    pub fn offset_to_vm_addr(&self, offset: u64) -> MachOResult<u64> {
+        let seg = self
+            .segs
+            .iter()
+            .find(|seg| seg.fileoff <= offset && offset < seg.fileoff + seg.filesize)
+            .ok_or(MachOErr {
+                detail: "Invalid offset.".to_string(),
+            })?;
+
+        let vm_addr = offset - seg.fileoff + seg.vmaddr;
+        Ok(vm_addr)
+    }
+
+    pub fn read_vm_addr_u64(&mut self, vm_addr: u64) -> MachOResult<u64> {
+        let offset = self.vm_addr_to_offset(vm_addr)?;
+        self.read_offset_u64(offset)
+    }
+
+    pub fn read_vm_addr_u32(&mut self, vm_addr: u64) -> MachOResult<u32> {
+        let offset = self.vm_addr_to_offset(vm_addr)?;
+        self.read_offset_u32(offset)
+    }
+
+    pub fn read_null_terminated_string(&mut self, offset: u64) -> MachOResult<String> {
+        if offset == 0 {
+            return Err(MachOErr {
+                detail: "Invalid offset: 0".to_string(),
+            });
+        }
+
+        let mut string_data = Vec::new();
+        let mut byte = [0u8; 1];
+        let mut offset = offset;
+        loop {
+            self.buf
+                .seek(SeekFrom::Start(offset))
+                .map_err(|_| MachOErr {
+                    detail: "Unable to seek to offset".to_string(),
+                })?;
+            self.buf.read_exact(&mut byte).map_err(|_| MachOErr {
+                detail: "Unable to read byte".to_string(),
+            })?;
+            if byte[0] == 0 {
+                break;
+            }
+            string_data.push(byte[0]);
+            offset += 1;
+        }
+
+        Ok(String::from_utf8(string_data).map_err(|_| MachOErr {
+            detail: "Unable to convert bytes to UTF8 string".to_string(),
+        })?)
     }
 }
 
