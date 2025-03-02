@@ -63,7 +63,7 @@ bitfield! {
 bitfield! {
     pub struct DyldChainedPtrArm64eRebase24BF(u64);
     impl Debug;
-    pub ordinal, set_ordinal: 23, 0;
+    pub target, set_target: 23, 0;
     pub high8, set_high8: 31, 24;
     pub zero, set_zero: 50, 32;
     pub next, set_next: 61, 51;
@@ -71,9 +71,9 @@ bitfield! {
     pub auth, set_auth: 63;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DyldChainedPtrArm64eRebase24 {
-    pub ordinal: u32,
+    pub target: u32,
     pub high8: u8,
     pub next: u16,
     pub bind: bool,
@@ -81,10 +81,12 @@ pub struct DyldChainedPtrArm64eRebase24 {
 }
 
 impl DyldChainedPtrArm64eRebase24 {
+    pub const STRIDE: u64 = 8;
+
     pub fn parse(raw: u64) -> Self {
         let bf = DyldChainedPtrArm64eRebase24BF(raw);
         DyldChainedPtrArm64eRebase24 {
-            ordinal: bf.ordinal() as u32,
+            target: bf.target() as u32,
             high8: bf.high8() as u8,
             next: bf.next() as u16,
             bind: bf.bind() as bool,
@@ -106,7 +108,7 @@ bitfield! {
     pub auth, set_auth: 63;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DyldChainedPtrArm64eAuthRebase24 {
     pub target: u32,
     pub diversity: u16,
@@ -118,6 +120,8 @@ pub struct DyldChainedPtrArm64eAuthRebase24 {
 }
 
 impl DyldChainedPtrArm64eAuthRebase24 {
+    pub const STRIDE: u64 = 8;
+
     pub fn parse(raw: u64) -> Self {
         let bf = DyldChainedPtrArm64eAuthRebase24BF(raw);
         DyldChainedPtrArm64eAuthRebase24 {
@@ -143,7 +147,7 @@ bitfield! {
     pub auth, set_auth: 63;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DyldChainedPtrArm64eBind24 {
     pub ordinal: u32,
     pub addend: u16,
@@ -153,6 +157,8 @@ pub struct DyldChainedPtrArm64eBind24 {
 }
 
 impl DyldChainedPtrArm64eBind24 {
+    pub const STRIDE: u64 = 8;
+
     pub fn parse(raw: u64) -> Self {
         let bf = DyldChainedPtrArm64eBind24BF(raw);
         DyldChainedPtrArm64eBind24 {
@@ -178,7 +184,7 @@ bitfield! {
     pub auth, set_auth: 63;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DyldChainedPtrArm64eAuthBind24 {
     pub ordinal: u32,
     pub diversity: u8,
@@ -190,6 +196,8 @@ pub struct DyldChainedPtrArm64eAuthBind24 {
 }
 
 impl DyldChainedPtrArm64eAuthBind24 {
+    pub const STRIDE: u64 = 8;
+
     pub fn parse(raw: u64) -> Self {
         let bf = DyldChainedPtrArm64eAuthBind24BF(raw);
         DyldChainedPtrArm64eAuthBind24 {
@@ -268,32 +276,54 @@ pub enum DyldPointerFixup {
 impl DyldPointerFixup {
     pub fn parse<T: Seek + Read>(buf: &mut T, start: &DyldStartsInSegment) -> Vec<Self> {
         let mut fixups = Vec::new();
-        let start_offset = start.segment_offset + *start.page_start.first().unwrap() as u64;
+        if start.page_start.is_empty() {
+            return fixups;
+        }
 
-        let mut fixup = vec![0u8; 8];
-        buf.seek(SeekFrom::Start(start_offset)).unwrap();
-        buf.read_exact(&mut fixup).unwrap();
-        let raw = u64::from_le_bytes(fixup.as_slice().try_into().unwrap());
-        fixups.push(DyldPointerFixup::parse_userland24(raw));
+        for (i, page_start) in start.page_start.iter().enumerate() {
+            let mut offset =
+                start.segment_offset + i as u64 * start.page_size as u64 + *page_start as u64;
+
+            loop {
+                let mut fixup = vec![0u8; 8];
+                buf.seek(SeekFrom::Start(offset)).unwrap();
+                buf.read_exact(&mut fixup).unwrap();
+                let raw = u64::from_le_bytes(fixup.as_slice().try_into().unwrap());
+                let (fixup, stride) = DyldPointerFixup::parse_userland24(raw);
+                fixups.push(fixup);
+                if stride == 0 {
+                    break;
+                }
+                offset += stride as u64;
+            }
+        }
 
         fixups
     }
 
-    fn parse_userland24(raw: u64) -> DyldPointerFixup {
+    fn parse_userland24(raw: u64) -> (DyldPointerFixup, u64) {
         let is_bind = (raw >> 62 & 1) == 1;
         let is_auth = (raw >> 63 & 1) == 1;
 
         if is_bind {
             if is_auth {
-                DyldPointerFixup::Arm64eAuthBind24(DyldChainedPtrArm64eAuthBind24::parse(raw))
+                let fixup = DyldChainedPtrArm64eAuthBind24::parse(raw);
+                let next = DyldChainedPtrArm64eAuthBind24::STRIDE * fixup.next as u64;
+                (DyldPointerFixup::Arm64eAuthBind24(fixup), next)
             } else {
-                DyldPointerFixup::Arm64eBind24(DyldChainedPtrArm64eBind24::parse(raw))
+                let fixup = DyldChainedPtrArm64eBind24::parse(raw);
+                let next = DyldChainedPtrArm64eBind24::STRIDE * fixup.next as u64;
+                (DyldPointerFixup::Arm64eBind24(fixup), next)
             }
         } else {
             if is_auth {
-                DyldPointerFixup::Arm64eAuthRebase24(DyldChainedPtrArm64eAuthRebase24::parse(raw))
+                let fixup = DyldChainedPtrArm64eAuthRebase24::parse(raw);
+                let next = DyldChainedPtrArm64eAuthRebase24::STRIDE * fixup.next as u64;
+                (DyldPointerFixup::Arm64eAuthRebase24(fixup), next)
             } else {
-                DyldPointerFixup::Arm64eRebase24(DyldChainedPtrArm64eRebase24::parse(raw))
+                let fixup = DyldChainedPtrArm64eRebase24::parse(raw);
+                let next = DyldChainedPtrArm64eRebase24::STRIDE * fixup.next as u64;
+                (DyldPointerFixup::Arm64eRebase24(fixup), next)
             }
         }
     }

@@ -585,10 +585,10 @@ impl DyldStartsInSegment {
             }
             let (cursor, start) = nom::number::complete::le_u16::<_, Error<_>>(bytes).unwrap();
             bytes = cursor;
-            if Self::DYLD_CHAINED_PTR_START_NONE & start > 0 {
+            if Self::DYLD_CHAINED_PTR_START_NONE == start {
                 break;
             }
-            if Self::DYLD_CHAINED_PTR_START_MULTI & start > 0 {
+            if Self::DYLD_CHAINED_PTR_START_MULTI == start {
                 println!("DYLD_CHAINED_PTR_START_MULTI hit. TODO: idk what to do here.");
                 break;
             }
