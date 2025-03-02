@@ -33,14 +33,28 @@ impl ObjCImageInfo {
     pub const SWIFT_UNSTABLE_VERSION_MASK: u32 = 0xff << 8;
     pub const SWIFT_STABLE_VERSION_MASK: u32 = 0xff << 16;
 
-    pub fn parse(segs: Vec<&SegmentCommand64>, all: &[u8]) -> Option<ObjCImageInfo> {
-        let objc_image_info = segs
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>) -> Option<ObjCImageInfo> {
+        let objc_image_info = macho
+            .load_commands
             .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(seg) => Some(seg),
+                _ => None,
+            })
             .flat_map(|seg| &seg.sections)
-            .find(|sect| sect.sectname == "__objc_imageinfo")?;
+            .find(|sect| sect.sectname == "__objc_imageinfo");
 
-        let info = &all[objc_image_info.offset as usize
-            ..objc_image_info.offset as usize + objc_image_info.size as usize];
+        let objc_image_info = match objc_image_info {
+            Some(objc_image_info) => objc_image_info,
+            None => return None,
+        };
+
+        let mut info = vec![0u8; objc_image_info.size as usize];
+        macho
+            .buf
+            .seek(SeekFrom::Start(objc_image_info.offset as u64))
+            .unwrap();
+        macho.buf.read_exact(&mut info).unwrap();
 
         let (_, version) = nom::number::complete::le_u32::<_, ()>(&info[0..4]).unwrap();
         let (_, flags) = nom::number::complete::le_u32::<_, ()>(&info[4..8]).unwrap();
@@ -262,20 +276,19 @@ impl ObjCSelRef {
 pub struct ObjCInfo {
     pub selrefs: Vec<ObjCSelRef>,
     pub classes: Vec<ObjCClass>,
-    // pub imageinfo: Option<ObjCImageInfo>,
+    pub imageinfo: Option<ObjCImageInfo>,
 }
 
 impl ObjCInfo {
     pub fn parse<T: Read + Seek>(macho: &mut MachO<T>) -> Option<ObjCInfo> {
-        let classes = ObjCClass::parse(macho);
-        // let imageinfo = ObjCImageInfo::parse(segs.clone(), all);
+        let imageinfo = ObjCImageInfo::parse(macho);
         let selrefs = ObjCSelRef::parse(macho);
+        let classes = ObjCClass::parse(macho);
 
         Some(ObjCInfo {
-            // selrefs,
             classes,
             selrefs,
-            // imageinfo: ,
+            imageinfo,
         })
     }
 
