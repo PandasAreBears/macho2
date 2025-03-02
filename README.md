@@ -15,7 +15,7 @@ A better parser for the MachO file format.
 ## TODO
 
 - [ ] Parse CMS signature in LC_CODE_SIGNATURE
-- [ ] Walk the chained fixups, and resolve library ordinals across several load commands
+- [ ] Resolve library ordinals across several load commands
 - [ ] Make the tools more user-friendly, and make more tools
 
 
