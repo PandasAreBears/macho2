@@ -1,3 +1,4 @@
+use bitfield::bitfield;
 use std::{
     io::{Read, Seek, SeekFrom},
     vec,
@@ -479,6 +480,15 @@ impl DyldImportFormat {
     }
 }
 
+bitfield! {
+    struct DyldChainedImportBF(u32);
+    impl Debug;
+    u32;
+    ordinal, set_ordinal: 7, 0;
+    weak, set_weak: 8, 8;
+    name_offset, set_name_offset: 31, 9;
+}
+
 #[derive(Debug)]
 pub struct DyldChainedImport {
     pub ordinal: u8,
@@ -487,30 +497,19 @@ pub struct DyldChainedImport {
 }
 
 impl DyldChainedImport {
-    pub const ORDINAL_MASK: u32 = 0xFF000000;
-    pub const WEAK_IMPORT_MASK: u32 = 0x00800000;
-    pub const NAME_OFFSET_MASK: u32 = 0x007FFFFF;
-
     pub fn parse<'a>(bytes: &'a [u8], symbols: &[u8]) -> nom::IResult<&'a [u8], DyldChainedImport> {
-        let (bytes, value) = nom::number::complete::be_u32(bytes)?;
-        let ordinal = ((value & Self::ORDINAL_MASK) >> 24) as u8;
-        let is_weak = (value & Self::WEAK_IMPORT_MASK) != 0;
-        //                v- 1st bit         v- 16th bit
-        // 00000000 00000000 00000000 00000000
-        //                          ^- 8th bit
-        let name_offset = (((value & 0xFE0000) >> 17)
-            + ((value & 0xFF00) >> 1)
-            + ((value & 0xFF) << 15)) as usize;
+        let (bytes, value) = nom::number::complete::le_u32(bytes)?;
+        let bf = DyldChainedImportBF(value);
 
-        let name = string_upto_null_terminator(&symbols[name_offset as usize..])
+        let name = string_upto_null_terminator(&symbols[bf.name_offset().to_le() as usize..])
             .unwrap()
             .1;
 
         Ok((
             bytes,
             DyldChainedImport {
-                ordinal,
-                is_weak,
+                ordinal: bf.ordinal().to_le() as u8,
+                is_weak: bf.weak().to_le() != 0,
                 name,
             },
         ))
