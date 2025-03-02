@@ -1,8 +1,18 @@
 use std::io::{Read, Seek, SeekFrom};
 
 use bitfield::bitfield;
+use num::FromPrimitive;
+use num_derive::FromPrimitive;
 
 use crate::dyldinfo::DyldStartsInSegment;
+
+#[derive(Debug, FromPrimitive, Clone)]
+pub enum DyldFixupPACKey {
+    IA = 0,
+    IB = 1,
+    DA = 2,
+    DB = 3,
+}
 
 bitfield! {
     pub struct DyldChainedPtrArm64eRebaseBF(u64);
@@ -113,7 +123,7 @@ pub struct DyldChainedPtrArm64eAuthRebase24 {
     pub target: u32,
     pub diversity: u16,
     pub addr_div: u8,
-    pub key: u8,
+    pub key: DyldFixupPACKey,
     pub next: u16,
     pub bind: bool,
     pub auth: bool,
@@ -128,7 +138,7 @@ impl DyldChainedPtrArm64eAuthRebase24 {
             target: bf.target() as u32,
             diversity: bf.diversity() as u16,
             addr_div: bf.addr_div() as u8,
-            key: bf.key() as u8,
+            key: DyldFixupPACKey::from_u8(bf.key() as u8).unwrap(),
             next: bf.next() as u16,
             bind: bf.bind() as bool,
             auth: bf.auth() as bool,
@@ -189,7 +199,7 @@ pub struct DyldChainedPtrArm64eAuthBind24 {
     pub ordinal: u32,
     pub diversity: u8,
     pub addr_div: bool,
-    pub key: u8,
+    pub key: DyldFixupPACKey,
     pub next: u16,
     pub bind: bool,
     pub auth: bool,
@@ -204,7 +214,7 @@ impl DyldChainedPtrArm64eAuthBind24 {
             ordinal: bf.ordinal() as u32,
             diversity: bf.diversity() as u8,
             addr_div: bf.addr_div() as bool,
-            key: bf.key() as u8,
+            key: DyldFixupPACKey::from_u8(bf.key() as u8).unwrap(),
             next: bf.next() as u16,
             bind: bf.bind() as bool,
             auth: bf.auth() as bool,
