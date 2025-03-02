@@ -4,7 +4,7 @@ use bitfield::bitfield;
 use num::FromPrimitive;
 use num_derive::FromPrimitive;
 
-use crate::dyldinfo::DyldStartsInSegment;
+use crate::dyldinfo::{DyldChainedImport, DyldPointerFormat, DyldStartsInSegment};
 
 #[derive(Debug, FromPrimitive, Clone)]
 pub enum DyldFixupPACKey {
@@ -159,7 +159,7 @@ bitfield! {
 
 #[derive(Debug, Clone)]
 pub struct DyldChainedPtrArm64eBind24 {
-    pub ordinal: u32,
+    pub ordinal: String,
     pub addend: u16,
     pub next: u16,
     pub bind: bool,
@@ -169,10 +169,10 @@ pub struct DyldChainedPtrArm64eBind24 {
 impl DyldChainedPtrArm64eBind24 {
     pub const STRIDE: u64 = 8;
 
-    pub fn parse(raw: u64) -> Self {
+    pub fn parse(raw: u64, ordinals: &Vec<String>) -> Self {
         let bf = DyldChainedPtrArm64eBind24BF(raw);
         DyldChainedPtrArm64eBind24 {
-            ordinal: bf.ordinal() as u32,
+            ordinal: (*ordinals.get(bf.ordinal() as usize).unwrap().clone()).to_string(),
             addend: bf.addend() as u16,
             next: bf.next() as u16,
             bind: bf.bind() as bool,
@@ -196,7 +196,7 @@ bitfield! {
 
 #[derive(Debug, Clone)]
 pub struct DyldChainedPtrArm64eAuthBind24 {
-    pub ordinal: u32,
+    pub ordinal: String,
     pub diversity: u8,
     pub addr_div: bool,
     pub key: DyldFixupPACKey,
@@ -208,10 +208,10 @@ pub struct DyldChainedPtrArm64eAuthBind24 {
 impl DyldChainedPtrArm64eAuthBind24 {
     pub const STRIDE: u64 = 8;
 
-    pub fn parse(raw: u64) -> Self {
+    pub fn parse(raw: u64, ordinals: &Vec<String>) -> Self {
         let bf = DyldChainedPtrArm64eAuthBind24BF(raw);
         DyldChainedPtrArm64eAuthBind24 {
-            ordinal: bf.ordinal() as u32,
+            ordinal: (*ordinals.get(bf.ordinal() as usize).unwrap().clone()).to_string(),
             diversity: bf.diversity() as u8,
             addr_div: bf.addr_div() as bool,
             key: DyldFixupPACKey::from_u8(bf.key() as u8).unwrap(),
@@ -284,44 +284,31 @@ pub enum DyldPointerFixup {
 }
 
 impl DyldPointerFixup {
-    pub fn parse<T: Seek + Read>(buf: &mut T, start: &DyldStartsInSegment) -> Vec<Self> {
-        let mut fixups = Vec::new();
-        if start.page_start.is_empty() {
-            return fixups;
-        }
-
-        for (i, page_start) in start.page_start.iter().enumerate() {
-            let mut offset =
-                start.segment_offset + i as u64 * start.page_size as u64 + *page_start as u64;
-
-            loop {
-                let mut fixup = vec![0u8; 8];
-                buf.seek(SeekFrom::Start(offset)).unwrap();
-                buf.read_exact(&mut fixup).unwrap();
-                let raw = u64::from_le_bytes(fixup.as_slice().try_into().unwrap());
-                let (fixup, stride) = DyldPointerFixup::parse_userland24(raw);
-                fixups.push(fixup);
-                if stride == 0 {
-                    break;
-                }
-                offset += stride as u64;
-            }
-        }
-
-        fixups
+    pub fn parse<T: Seek + Read>(
+        buf: &mut T,
+        offset: u64,
+        _ptr_format: &DyldPointerFormat,
+        ordinals: &Vec<String>,
+    ) -> (Self, u64) {
+        let mut fixup = vec![0u8; 8];
+        buf.seek(SeekFrom::Start(offset)).unwrap();
+        buf.read_exact(&mut fixup).unwrap();
+        let raw = u64::from_le_bytes(fixup.as_slice().try_into().unwrap());
+        let (fixup, stride) = DyldPointerFixup::parse_userland24(raw, &ordinals);
+        (fixup, offset + stride)
     }
 
-    fn parse_userland24(raw: u64) -> (DyldPointerFixup, u64) {
+    fn parse_userland24(raw: u64, ordinals: &Vec<String>) -> (DyldPointerFixup, u64) {
         let is_bind = (raw >> 62 & 1) == 1;
         let is_auth = (raw >> 63 & 1) == 1;
 
         if is_bind {
             if is_auth {
-                let fixup = DyldChainedPtrArm64eAuthBind24::parse(raw);
+                let fixup = DyldChainedPtrArm64eAuthBind24::parse(raw, ordinals);
                 let next = DyldChainedPtrArm64eAuthBind24::STRIDE * fixup.next as u64;
                 (DyldPointerFixup::Arm64eAuthBind24(fixup), next)
             } else {
-                let fixup = DyldChainedPtrArm64eBind24::parse(raw);
+                let fixup = DyldChainedPtrArm64eBind24::parse(raw, ordinals);
                 let next = DyldChainedPtrArm64eBind24::STRIDE * fixup.next as u64;
                 (DyldPointerFixup::Arm64eBind24(fixup), next)
             }
@@ -336,5 +323,43 @@ impl DyldPointerFixup {
                 (DyldPointerFixup::Arm64eRebase24(fixup), next)
             }
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct DyldFixup {
+    pub offset: u64,
+    pub fixup: DyldPointerFixup,
+}
+
+impl DyldFixup {
+    pub fn parse<T: Seek + Read>(
+        buf: &mut T,
+        start: &DyldStartsInSegment,
+        imports: &Vec<DyldChainedImport>,
+    ) -> Vec<Self> {
+        let mut fixups = Vec::new();
+        if start.page_start.is_empty() {
+            return fixups;
+        }
+
+        let ordinals: Vec<String> = imports.iter().map(|import| import.name.clone()).collect();
+
+        for (i, page_start) in start.page_start.iter().enumerate() {
+            let mut offset =
+                start.segment_offset + i as u64 * start.page_size as u64 + *page_start as u64;
+
+            loop {
+                let (fixup, next) =
+                    DyldPointerFixup::parse(buf, offset, &start.pointer_format, &ordinals);
+                fixups.push(DyldFixup { offset, fixup });
+                if next == offset {
+                    break;
+                }
+                offset = next;
+            }
+        }
+
+        fixups
     }
 }
