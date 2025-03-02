@@ -9,6 +9,7 @@ use num_derive::FromPrimitive;
 
 use crate::{
     commands::LinkeditDataCommand,
+    fixups::DyldPointerFixup,
     header::MachHeader,
     helpers::{read_sleb, read_uleb, string_upto_null_terminator},
     load_command::{LCLoadCommand, LoadCommandBase},
@@ -681,6 +682,7 @@ pub struct DyldChainedFixupCommand {
     pub header: DyldChainedFixupsHeader,
     pub imports: Vec<DyldChainedImport>,
     pub starts: DyldStartsInImage,
+    pub fixups: Vec<DyldPointerFixup>,
 }
 
 impl DyldChainedFixupCommand {
@@ -709,6 +711,11 @@ impl DyldChainedFixupCommand {
 
         let (_, starts) = DyldStartsInImage::parse(&blob[header.starts_offset as usize..]).unwrap();
 
+        let mut fixups = vec![];
+        for start in &starts.seg_starts {
+            fixups.extend(DyldPointerFixup::parse(buf, start));
+        }
+
         Ok((
             ldcmd,
             DyldChainedFixupCommand {
@@ -716,6 +723,7 @@ impl DyldChainedFixupCommand {
                 header,
                 imports,
                 starts,
+                fixups,
             },
         ))
     }
