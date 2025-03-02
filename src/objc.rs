@@ -1,8 +1,10 @@
+use bitflags::bitflags;
 use std::io::{Read, Seek, SeekFrom};
+
+use num_derive::FromPrimitive;
 
 use crate::{
     fixups::DyldFixup,
-    helpers::string_upto_null_terminator,
     macho::{LoadCommand, MachO},
     segment::SegmentCommand64,
 };
@@ -60,7 +62,7 @@ impl ObjCImageInfo {
         let (_, flags) = nom::number::complete::le_u32::<_, ()>(&info[4..8]).unwrap();
         let swift_stable_version = (flags & Self::SWIFT_STABLE_VERSION_MASK) >> 16;
         let swift_unstable_version = (flags & Self::SWIFT_UNSTABLE_VERSION_MASK) >> 8;
-        let flags = ObjCImageInfoFlags::from_bits(flags).unwrap();
+        let flags = ObjCImageInfoFlags::from_bits_truncate(flags);
 
         Some(ObjCImageInfo {
             version,
@@ -87,11 +89,123 @@ pub struct ObjCCategory {
     pub instance_properties: u64,
 }
 
+#[derive(Debug, FromPrimitive)]
+pub enum ObjCMethodListType {
+    Small = 1,
+    BigSigned = 2,
+}
+
+bitflags! {
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    pub struct ObjCMethodListFlags: u32 {
+        const UNIQUED = 1 << 0;
+        const SORTED = 1 << 1;
+        const SMALL_METHOD_LIST = 0x80000000;
+        const RELATIVE_METHOD_SELECTORS_ARE_DIRECT_FLAG = 0x40000000;
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ObjCMethodListSizeAndFlags {
+    pub flags: ObjCMethodListFlags,
+    pub size: u32,
+}
+
+impl ObjCMethodListSizeAndFlags {
+    pub const FLAGS_BITMASK: u32 = 0xFFFF_0003;
+    pub const SIZE_BITMASK: u32 = 0x0000_FFFC;
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> ObjCMethodListSizeAndFlags {
+        let mut data = vec![0u8; 4];
+        macho.buf.seek(SeekFrom::Start(offset)).unwrap();
+        macho.buf.read_exact(&mut data).unwrap();
+
+        let value = u32::from_le_bytes(data.try_into().unwrap());
+        let flags = ObjCMethodListFlags::from_bits_truncate(value & Self::FLAGS_BITMASK);
+        let size = value & Self::SIZE_BITMASK;
+
+        ObjCMethodListSizeAndFlags { flags, size }
+    }
+}
+
+#[derive(Debug)]
+pub struct ObjCMethodList {
+    pub size_and_flags: ObjCMethodListSizeAndFlags,
+    pub count: u32,
+    pub methods: Vec<ObjCMethod>,
+}
+
+impl ObjCMethodList {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> ObjCMethodList {
+        let size_and_flags = ObjCMethodListSizeAndFlags::parse(macho, offset);
+
+        let mut count = vec![0u8; 4];
+        macho.buf.seek(SeekFrom::Start(offset + 4)).unwrap();
+        macho.buf.read_exact(&mut count).unwrap();
+        let count = u32::from_le_bytes(count.try_into().unwrap());
+
+        let mut methods = Vec::new();
+        if (size_and_flags.flags & ObjCMethodListFlags::SMALL_METHOD_LIST)
+            == ObjCMethodListFlags::SMALL_METHOD_LIST
+        {
+            let mut method_offset = offset + 8;
+            for _ in 0..count {
+                let method = ObjCMethod::parse_small(macho, method_offset);
+                methods.push(method);
+                method_offset += 12;
+            }
+        }
+
+        ObjCMethodList {
+            size_and_flags,
+            count,
+            methods,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ObjCMethod {
-    pub name: u64,
-    pub types: u64,
+    pub name: String,
+    pub types: String,
     pub imp: u64,
+}
+
+impl ObjCMethod {
+    pub fn parse_small<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> ObjCMethod {
+        let mut data = vec![0u8; 12];
+        macho.buf.seek(SeekFrom::Start(offset)).unwrap();
+        macho.buf.read_exact(&mut data).unwrap();
+
+        let name_rel_off = i32::from_le_bytes(data[0..4].try_into().unwrap());
+        let types_rel_off = i32::from_le_bytes(data[4..8].try_into().unwrap());
+        let imp_rel_off = i32::from_le_bytes(data[8..12].try_into().unwrap());
+
+        let name_off = offset as i64 + name_rel_off as i64;
+        let types_off = (offset + 4) as i64 + types_rel_off as i64;
+        let imp_off = (offset + 8) as i64 + imp_rel_off as i64;
+
+        // TODO: Clean this up so that machos with invalid objc info, i.e. those
+        // produced by dsc_extractor, don't crash
+        let sel_vmaddr = ObjCInfo::read_offset(macho, name_off as u64);
+        let segs = macho
+            .load_commands
+            .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(seg) => Some(seg),
+                _ => None,
+            })
+            .collect();
+        let sel_off = ObjCInfo::file_off_for_vm_addr(&segs, sel_vmaddr).unwrap();
+        let name = ObjCInfo::read_string(macho, sel_off);
+
+        let types = ObjCInfo::read_string(macho, types_off as u64);
+
+        ObjCMethod {
+            name,
+            types,
+            imp: imp_off as u64,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -126,7 +240,7 @@ pub struct ObjCClassRO {
     pub reserved: u32,
     pub ivar_layout: u64,
     pub name: String,
-    pub base_methods: u64,
+    pub base_methods: Option<ObjCMethodList>,
     pub base_protocols: u64,
     pub ivars: u64,
     pub weak_ivar_layout: u64,
@@ -171,6 +285,13 @@ impl ObjCClassRO {
             .collect();
 
         let name_off = ObjCInfo::file_off_for_vm_addr(&segs, name).unwrap();
+        let base_methods_off = ObjCInfo::file_off_for_vm_addr(&segs, base_methods);
+        let base_methods = if base_methods_off.is_some() {
+            Some(ObjCMethodList::parse(macho, base_methods_off.unwrap()))
+        } else {
+            None
+        };
+
         let name_str = ObjCInfo::read_string(macho, name_off);
 
         ObjCClassRO {
@@ -418,7 +539,23 @@ impl ObjCInfo {
             .map(|v| &**v)
     }
 
+    pub fn seg_for_vm_offset<'a>(
+        segs: &'a Vec<&SegmentCommand64>,
+        offset: u64,
+    ) -> Option<&'a SegmentCommand64> {
+        segs.iter()
+            .find(|seg| {
+                let start = seg.fileoff;
+                let end = start + seg.filesize;
+                start <= offset && offset < end
+            })
+            .map(|v| &**v)
+    }
+
     pub fn file_off_for_vm_addr(segs: &Vec<&SegmentCommand64>, vm_addr: u64) -> Option<u64> {
+        if vm_addr == 0 {
+            return None;
+        }
         Self::seg_for_vm_addr(segs, vm_addr).map(|seg| {
             let start = seg.vmaddr;
             let file_off = seg.fileoff + (vm_addr - start);
