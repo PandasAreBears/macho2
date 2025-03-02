@@ -125,12 +125,68 @@ pub struct ObjCClassRO {
     pub instance_size: u32,
     pub reserved: u32,
     pub ivar_layout: u64,
-    pub name: u64,
+    pub name: String,
     pub base_methods: u64,
     pub base_protocols: u64,
     pub ivars: u64,
     pub weak_ivar_layout: u64,
     pub base_properties: u64,
+}
+
+impl ObjCClassRO {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, vmaddr: u64) -> ObjCClassRO {
+        let segs = macho
+            .load_commands
+            .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(seg) => Some(seg),
+                _ => None,
+            })
+            .collect();
+
+        let file_off = ObjCInfo::file_off_for_vm_addr(&segs, vmaddr).unwrap();
+        let mut ro_data = vec![0u8; 72];
+        macho.buf.seek(SeekFrom::Start(file_off)).unwrap();
+        macho.buf.read_exact(&mut ro_data).unwrap();
+
+        let flags = u32::from_le_bytes(ro_data[0..4].try_into().unwrap()) as u32;
+        let instance_start = u32::from_le_bytes(ro_data[4..8].try_into().unwrap()) as u32;
+        let instance_size = u32::from_le_bytes(ro_data[8..12].try_into().unwrap()) as u32;
+        let reserved = u32::from_le_bytes(ro_data[12..16].try_into().unwrap()) as u32;
+        let ivar_layout = u64::from_le_bytes(ro_data[16..24].try_into().unwrap()) as u64;
+        let name = ObjCInfo::read_offset(macho, file_off + 24);
+        let base_methods = ObjCInfo::read_offset(macho, file_off + 32);
+        let base_protocols = ObjCInfo::read_offset(macho, file_off + 40);
+        let ivars = ObjCInfo::read_offset(macho, file_off + 48);
+        let weak_ivar_layout = u64::from_le_bytes(ro_data[56..64].try_into().unwrap());
+        let base_properties = u64::from_le_bytes(ro_data[64..72].try_into().unwrap());
+
+        let segs = macho
+            .load_commands
+            .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(seg) => Some(seg),
+                _ => None,
+            })
+            .collect();
+
+        let name_off = ObjCInfo::file_off_for_vm_addr(&segs, name).unwrap();
+        let name_str = ObjCInfo::read_string(macho, name_off);
+
+        ObjCClassRO {
+            flags,
+            instance_start,
+            instance_size,
+            reserved,
+            ivar_layout,
+            name: name_str,
+            base_methods,
+            base_protocols,
+            ivars,
+            weak_ivar_layout,
+            base_properties,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -139,7 +195,7 @@ pub struct ObjCClass {
     pub superclass: u64,
     pub cache: u64,
     pub vtable: u64,
-    pub ro: u64,
+    pub ro: ObjCClassRO,
 }
 
 impl ObjCClass {
@@ -198,7 +254,8 @@ impl ObjCClass {
                 let superclass = ObjCInfo::read_offset(macho, *offset + 8);
                 let cache = ObjCInfo::read_offset(macho, *offset + 16);
                 let vtable = ObjCInfo::read_offset(macho, *offset + 24);
-                let ro = ObjCInfo::read_offset(macho, *offset + 32);
+                let ro_vmaddr = ObjCInfo::read_offset(macho, *offset + 32);
+                let ro = ObjCClassRO::parse(macho, ro_vmaddr);
 
                 ObjCClass {
                     isa,
@@ -254,19 +311,21 @@ impl ObjCSelRef {
             })
             .collect();
 
-        vmaddrs
+        let sel_offs: Vec<u64> = vmaddrs
             .iter()
-            .map(|vmaddr| {
-                let vmaddr = ObjCInfo::file_off_for_vm_addr(&segs, vmaddr.clone()).unwrap();
+            .map(|vmaddr| ObjCInfo::file_off_for_vm_addr(&segs, vmaddr.clone()).unwrap())
+            .collect();
 
-                // Assume a max selref size of 256 bytes
-                let mut selref_data = vec![0u8; 256];
-                macho.buf.seek(SeekFrom::Start(vmaddr)).unwrap();
-                macho.buf.read_exact(&mut selref_data).unwrap();
+        sel_offs
+            .iter()
+            .zip(vmaddrs.iter())
+            .map(|(offset, vmaddr)| {
+                let sel = ObjCInfo::read_string(macho, *offset);
 
-                let (_, s) = string_upto_null_terminator(&selref_data).unwrap();
-
-                ObjCSelRef { sel: s, vmaddr }
+                ObjCSelRef {
+                    sel,
+                    vmaddr: *vmaddr,
+                }
             })
             .collect()
     }
@@ -293,6 +352,10 @@ impl ObjCInfo {
     }
 
     fn read_offset<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> u64 {
+        if offset == 0 {
+            return 0;
+        }
+
         let dyldfixup: Vec<&DyldFixup> = macho
             .load_commands
             .iter()
@@ -319,6 +382,27 @@ impl ObjCInfo {
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut value).unwrap();
         u64::from_le_bytes(value)
+    }
+
+    fn read_string<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> String {
+        if offset == 0 {
+            return String::new();
+        }
+
+        let mut string_data = Vec::new();
+        let mut byte = [0u8; 1];
+        let mut offset = offset;
+        loop {
+            macho.buf.seek(SeekFrom::Start(offset)).unwrap();
+            macho.buf.read_exact(&mut byte).unwrap();
+            if byte[0] == 0 {
+                break;
+            }
+            string_data.push(byte[0]);
+            offset += 1;
+        }
+
+        String::from_utf8(string_data).unwrap()
     }
 
     pub fn seg_for_vm_addr<'a>(
