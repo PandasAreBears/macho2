@@ -71,8 +71,60 @@ impl ObjCImageInfo {
 
 #[derive(Debug)]
 pub struct ObjCProperty {
-    pub name: u64,
-    pub attributes: u64,
+    pub name: String,
+    pub attributes: String,
+}
+
+impl ObjCProperty {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCProperty> {
+        let mut data = vec![0u8; 16];
+        macho.buf.seek(SeekFrom::Start(offset)).unwrap();
+        macho.buf.read_exact(&mut data).unwrap();
+
+        let name = macho.read_offset_u64(offset)?;
+        let attributes = macho.read_offset_u64(offset + 8)?;
+
+        let name_off = macho.vm_addr_to_offset(name)?;
+        let name = macho.read_null_terminated_string(name_off)?;
+
+        let attributes_off = macho.vm_addr_to_offset(attributes)?;
+        let attributes = macho.read_null_terminated_string(attributes_off)?;
+
+        Ok(ObjCProperty { name, attributes })
+    }
+}
+
+#[derive(Debug)]
+pub struct ObjCPropertyList {
+    pub entsize: u32,
+    pub count: u32,
+    pub properties: Vec<ObjCProperty>,
+}
+
+impl ObjCPropertyList {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> ObjCPropertyList {
+        let mut data = vec![0u8; 8];
+        macho.buf.seek(SeekFrom::Start(offset)).unwrap();
+        macho.buf.read_exact(&mut data).unwrap();
+
+        let entsize = u32::from_le_bytes(data[0..4].try_into().unwrap());
+        let count = u32::from_le_bytes(data[4..8].try_into().unwrap());
+
+        let mut off = offset + 8;
+        let properties = (0..count)
+            .filter_map(|_| {
+                let property = ObjCProperty::parse(macho, off);
+                off += entsize as u64;
+                property.ok()
+            })
+            .collect();
+
+        ObjCPropertyList {
+            entsize,
+            count,
+            properties,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -365,7 +417,7 @@ pub struct ObjCClassRO {
     pub base_protocols: Option<ObjCProtocolList>,
     pub ivars: Option<ObjCIVarList>,
     pub weak_ivar_layout: u64,
-    pub base_properties: u64,
+    pub base_properties: Option<ObjCPropertyList>,
 }
 
 impl ObjCClassRO {
@@ -387,7 +439,7 @@ impl ObjCClassRO {
         let base_protocols = macho.read_offset_u64(file_off + 40)?;
         let ivars = macho.read_offset_u64(file_off + 48)?;
         let weak_ivar_layout = u64::from_le_bytes(ro_data[56..64].try_into().unwrap());
-        let base_properties = u64::from_le_bytes(ro_data[64..72].try_into().unwrap());
+        let base_properties = macho.read_offset_u64(file_off + 64)?;
 
         let name_off = macho.vm_addr_to_offset(name).unwrap();
         let name_str = macho.read_null_terminated_string(name_off)?;
@@ -409,6 +461,13 @@ impl ObjCClassRO {
         let ivars_offset = macho.vm_addr_to_offset(ivars)?;
         let ivars = if ivars_offset != 0 {
             Some(ObjCIVarList::parse(macho, ivars_offset))
+        } else {
+            None
+        };
+
+        let base_properties_off = macho.vm_addr_to_offset(base_properties)?;
+        let base_properties = if base_properties_off != 0 {
+            Some(ObjCPropertyList::parse(macho, base_properties_off))
         } else {
             None
         };
