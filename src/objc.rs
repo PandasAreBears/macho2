@@ -3,7 +3,7 @@ use std::io::{Read, Seek, SeekFrom};
 
 use num_derive::FromPrimitive;
 
-use crate::macho::{LoadCommand, MachO, MachOResult};
+use crate::macho::{LoadCommand, MachO, MachOErr, MachOResult};
 
 bitflags::bitflags! {
     #[derive(Debug)]
@@ -83,6 +83,82 @@ pub struct ObjCCategory {
     pub class_methods: u64,
     pub protocols: u64,
     pub instance_properties: u64,
+}
+
+#[derive(Debug)]
+pub struct ObjCIVar {
+    pub offset: u32,
+    pub name: String,
+    pub type_: String,
+    pub alignment: u32,
+    pub size: u32,
+}
+
+impl ObjCIVar {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCIVar> {
+        let mut data = vec![0u8; 32];
+        macho.buf.seek(SeekFrom::Start(offset)).unwrap();
+        macho.buf.read_exact(&mut data).unwrap();
+
+        let offset_ = u32::from_le_bytes(data[0..4].try_into().map_err(|_| MachOErr {
+            detail: "Failed to parse offset".to_string(),
+        })?);
+        let name = macho.read_offset_u64(offset + 8)?;
+        let type_ = macho.read_offset_u64(offset + 16)?;
+        let alignment = u32::from_le_bytes(data[24..28].try_into().map_err(|_| MachOErr {
+            detail: "Failed to parse alignment".to_string(),
+        })?);
+        let size = u32::from_le_bytes(data[28..32].try_into().map_err(|_| MachOErr {
+            detail: "Failed to parse size".to_string(),
+        })?);
+
+        let name_off = macho.vm_addr_to_offset(name)?;
+        let name = macho.read_null_terminated_string(name_off)?;
+
+        let type_off = macho.vm_addr_to_offset(type_)?;
+        let type_ = macho.read_null_terminated_string(type_off)?;
+
+        Ok(ObjCIVar {
+            offset: offset_,
+            name,
+            type_,
+            alignment,
+            size,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct ObjCIVarList {
+    pub entsize: u32,
+    pub count: u32,
+    pub ivars: Vec<ObjCIVar>,
+}
+
+impl ObjCIVarList {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> ObjCIVarList {
+        let mut data = vec![0u8; 8];
+        macho.buf.seek(SeekFrom::Start(offset)).unwrap();
+        macho.buf.read_exact(&mut data).unwrap();
+
+        let entsize = u32::from_le_bytes(data[0..4].try_into().unwrap());
+        let count = u32::from_le_bytes(data[4..8].try_into().unwrap());
+
+        let mut off = offset + 8;
+        let ivars = (0..count)
+            .filter_map(|_| {
+                let ivar = ObjCIVar::parse(macho, off);
+                off += entsize as u64;
+                ivar.ok()
+            })
+            .collect();
+
+        ObjCIVarList {
+            entsize,
+            count,
+            ivars,
+        }
+    }
 }
 
 #[derive(Debug, FromPrimitive)]
@@ -216,13 +292,65 @@ pub struct ObjCProtocol {
     pub extended_method_types: u64,
 }
 
+impl ObjCProtocol {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCProtocol> {
+        let mut data = vec![0u8; 80];
+        macho.buf.seek(SeekFrom::Start(offset)).unwrap();
+        macho.buf.read_exact(&mut data).unwrap();
+
+        let isa = macho.read_offset_u64(offset)?;
+        let name = macho.read_offset_u64(offset + 8)?;
+        let protocols = macho.read_offset_u64(offset + 16)?;
+        let instance_methods = macho.read_offset_u64(offset + 24)?;
+        let class_methods = macho.read_offset_u64(offset + 32)?;
+        let optional_instance_methods = macho.read_offset_u64(offset + 40)?;
+        let optional_class_methods = macho.read_offset_u64(offset + 48)?;
+        let instance_properties = macho.read_offset_u64(offset + 56)?;
+        let size = u32::from_le_bytes(data[64..68].try_into().unwrap());
+        let flags = u32::from_le_bytes(data[68..72].try_into().unwrap());
+        let extended_method_types = macho.read_offset_u64(offset + 72)?;
+
+        Ok(ObjCProtocol {
+            isa,
+            name,
+            protocols,
+            instance_methods,
+            class_methods,
+            optional_instance_methods,
+            optional_class_methods,
+            instance_properties,
+            size,
+            flags,
+            extended_method_types,
+        })
+    }
+}
+
 #[derive(Debug)]
-pub struct ObjCIVar {
-    pub offset: u64,
-    pub name: u64,
-    pub type_: u64,
-    pub alignment: u32,
-    pub size: u32,
+pub struct ObjCProtocolList {
+    pub count: u64,
+    pub protocols: Vec<ObjCProtocol>,
+}
+
+impl ObjCProtocolList {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> ObjCProtocolList {
+        let mut data = vec![0u8; 8];
+        macho.buf.seek(SeekFrom::Start(offset)).unwrap();
+        macho.buf.read_exact(&mut data).unwrap();
+
+        let count = u64::from_le_bytes(data[0..8].try_into().unwrap());
+
+        let mut off = offset + 8;
+        let protocols = (0..count)
+            .filter_map(|_| {
+                let protocol = ObjCProtocol::parse(macho, off);
+                off += 80;
+                protocol.ok()
+            })
+            .collect();
+
+        ObjCProtocolList { count, protocols }
+    }
 }
 
 #[derive(Debug)]
@@ -234,8 +362,8 @@ pub struct ObjCClassRO {
     pub ivar_layout: u64,
     pub name: String,
     pub base_methods: Option<ObjCMethodList>,
-    pub base_protocols: u64,
-    pub ivars: u64,
+    pub base_protocols: Option<ObjCProtocolList>,
+    pub ivars: Option<ObjCIVarList>,
     pub weak_ivar_layout: u64,
     pub base_properties: u64,
 }
@@ -247,6 +375,8 @@ impl ObjCClassRO {
         macho.buf.seek(SeekFrom::Start(file_off)).unwrap();
         macho.buf.read_exact(&mut ro_data).unwrap();
 
+        // TODO: A bunch of these fields can be resolved, but there will be some repetition. Think
+        // about how this can be cached.
         let flags = u32::from_le_bytes(ro_data[0..4].try_into().unwrap()) as u32;
         let instance_start = u32::from_le_bytes(ro_data[4..8].try_into().unwrap()) as u32;
         let instance_size = u32::from_le_bytes(ro_data[8..12].try_into().unwrap()) as u32;
@@ -260,6 +390,8 @@ impl ObjCClassRO {
         let base_properties = u64::from_le_bytes(ro_data[64..72].try_into().unwrap());
 
         let name_off = macho.vm_addr_to_offset(name).unwrap();
+        let name_str = macho.read_null_terminated_string(name_off)?;
+
         let base_methods_off = macho.vm_addr_to_offset(base_methods)?;
         let base_methods = if base_methods_off != 0 {
             Some(ObjCMethodList::parse(macho, base_methods_off))
@@ -267,7 +399,19 @@ impl ObjCClassRO {
             None
         };
 
-        let name_str = macho.read_null_terminated_string(name_off)?;
+        let base_protocols_off = macho.vm_addr_to_offset(base_protocols)?;
+        let base_protocols = if base_protocols_off != 0 {
+            Some(ObjCProtocolList::parse(macho, base_protocols_off))
+        } else {
+            None
+        };
+
+        let ivars_offset = macho.vm_addr_to_offset(ivars)?;
+        let ivars = if ivars_offset != 0 {
+            Some(ObjCIVarList::parse(macho, ivars_offset))
+        } else {
+            None
+        };
 
         Ok(ObjCClassRO {
             flags,
