@@ -282,7 +282,14 @@ impl ObjCMethodList {
                 })
                 .collect::<Vec<ObjCMethod>>()
         } else {
-            Vec::new()
+            let mut off = offset + 8;
+            (0..count)
+                .filter_map(|_| {
+                    let method = ObjCMethod::parse_normal(macho, off);
+                    off += 24;
+                    method.ok()
+                })
+                .collect::<Vec<ObjCMethod>>()
         };
 
         ObjCMethodList {
@@ -315,7 +322,7 @@ impl ObjCMethod {
 
         let name_off = offset as i64 + name_rel_off as i64;
         let types_off = (offset + 4) as i64 + types_rel_off as i64;
-        let imp_off = (offset + 8) as i64 + imp_rel_off as i64;
+        let imp_off: i64 = (offset + 8) as i64 + imp_rel_off as i64;
 
         // TODO: Clean this up so that machos with invalid objc info, i.e. those
         // produced by dsc_extractor, don't crash
@@ -330,39 +337,154 @@ impl ObjCMethod {
             imp: imp_off as u64,
         })
     }
+
+    pub fn parse_normal<T: Read + Seek>(
+        macho: &mut MachO<T>,
+        offset: u64,
+    ) -> MachOResult<ObjCMethod> {
+        let mut data = vec![0u8; 24];
+        macho.buf.seek(SeekFrom::Start(offset)).unwrap();
+        macho.buf.read_exact(&mut data).unwrap();
+
+        let name = macho.read_offset_u64(offset)?.unwrap()?;
+        let types = macho.read_offset_u64(offset + 8)?.unwrap()?;
+        let imp = macho.read_offset_u64(offset + 16)?.unwrap()?;
+
+        let name_off = macho.vm_addr_to_offset(name)?;
+        let name = macho.read_null_terminated_string(name_off)?;
+
+        let types_off = macho.vm_addr_to_offset(types)?;
+        let types = macho.read_null_terminated_string(types_off)?;
+
+        Ok(ObjCMethod { name, types, imp })
+    }
 }
 
 #[derive(Debug)]
 pub struct ObjCProtocol {
-    pub isa: u64,
-    pub name: u64,
-    pub protocols: u64,
-    pub instance_methods: u64,
-    pub class_methods: u64,
-    pub optional_instance_methods: u64,
-    pub optional_class_methods: u64,
-    pub instance_properties: u64,
+    pub isa: Option<ObjCClassPtr>,
+    pub name: String,
+    pub protocols: u64, // Option<ObjCProtocolList>,
+    pub instance_methods: Option<ObjCMethodList>,
+    pub class_methods: Option<ObjCMethodList>,
+    pub optional_instance_methods: Option<ObjCMethodList>,
+    pub optional_class_methods: Option<ObjCMethodList>,
+    pub instance_properties: Option<ObjCPropertyList>,
     pub size: u32,
     pub flags: u32,
     pub extended_method_types: u64,
 }
 
 impl ObjCProtocol {
+    pub fn parse_protolist<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCProtocol> {
+        let protolist = macho
+            .load_commands
+            .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(seg) => Some(seg),
+                _ => None,
+            })
+            .flat_map(|seg| &seg.sections)
+            .find(|sect| sect.sectname == "__objc_protolist");
+
+        let protolist = match protolist {
+            Some(protolist) => protolist,
+            None => return Vec::new(),
+        };
+
+        let nrefs = protolist.size / 8;
+        let offsets: Vec<u64> = (0..nrefs)
+            .map(|i| protolist.offset as u64 + i * 8u64)
+            .collect();
+
+        let vmaddrs: Vec<u64> = offsets
+            .into_iter()
+            .filter_map(|offset: u64| macho.read_offset_u64(offset).ok())
+            .filter_map(|vmaddr| vmaddr.unwrap().ok())
+            .collect();
+
+        let prot_offs: Vec<u64> = vmaddrs
+            .iter()
+            .filter_map(|cls_addr| macho.vm_addr_to_offset(cls_addr.clone()).ok())
+            .collect();
+
+        prot_offs
+            .iter()
+            .filter_map(|offset| {
+                let cls = ObjCProtocol::parse(macho, *offset);
+                if cls.is_err() {
+                    println!(
+                        "Failed to parse protocol at offset: {:#x} {}",
+                        offset,
+                        cls.err().unwrap()
+                    );
+                    return None;
+                }
+                cls.ok()
+            })
+            .collect()
+    }
+
     pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCProtocol> {
+        println!("offset: {:#x}", offset);
         let mut data = vec![0u8; 80];
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
 
-        // TODO: A bunch of these fields can be resolved, but there will be some repetition. Think
-        // about how this can be cached.
+        // This should always be None.
         let isa = macho.read_offset_u64(offset)?.unwrap()?;
+        let isa = if isa != 0 {
+            let off = macho.vm_addr_to_offset(isa)?;
+            Some(ObjCClassPtr::Class(Rc::new(ObjCClass::parse(macho, off)?)))
+        } else {
+            None
+        };
+
         let name = macho.read_offset_u64(offset + 8)?.unwrap()?;
+        let name_off = macho.vm_addr_to_offset(name)?;
+        let name = macho.read_null_terminated_string(name_off)?;
+
         let protocols = macho.read_offset_u64(offset + 16)?.unwrap()?;
         let instance_methods = macho.read_offset_u64(offset + 24)?.unwrap()?;
+        let instance_methods = if instance_methods != 0 {
+            let off = macho.vm_addr_to_offset(instance_methods)?;
+            Some(ObjCMethodList::parse(macho, off))
+        } else {
+            None
+        };
+
         let class_methods = macho.read_offset_u64(offset + 32)?.unwrap()?;
+        let class_methods = if class_methods != 0 {
+            let off = macho.vm_addr_to_offset(class_methods)?;
+            Some(ObjCMethodList::parse(macho, off))
+        } else {
+            None
+        };
+
         let optional_instance_methods = macho.read_offset_u64(offset + 40)?.unwrap()?;
+        let optional_instance_methods = if optional_instance_methods != 0 {
+            let off = macho.vm_addr_to_offset(optional_instance_methods)?;
+            Some(ObjCMethodList::parse(macho, off))
+        } else {
+            None
+        };
+
         let optional_class_methods = macho.read_offset_u64(offset + 48)?.unwrap()?;
+        let optional_class_methods = if optional_class_methods != 0 {
+            let off = macho.vm_addr_to_offset(optional_class_methods)?;
+            Some(ObjCMethodList::parse(macho, off))
+        } else {
+            None
+        };
+
         let instance_properties = macho.read_offset_u64(offset + 56)?.unwrap()?;
+        let instance_properties = if instance_properties != 0 {
+            let off = macho.vm_addr_to_offset(instance_properties)?;
+            Some(ObjCPropertyList::parse(macho, off))
+        } else {
+            None
+        };
+
         let size = u32::from_le_bytes(data[64..68].try_into().unwrap());
         let flags = u32::from_le_bytes(data[68..72].try_into().unwrap());
         let extended_method_types = macho.read_offset_u64(offset + 72)?.unwrap()?;
@@ -390,12 +512,16 @@ pub struct ObjCProtocolList {
 }
 
 impl ObjCProtocolList {
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> ObjCProtocolList {
+    pub fn parse<T: Read + Seek>(
+        macho: &mut MachO<T>,
+        offset: u64,
+    ) -> MachOResult<ObjCProtocolList> {
         let mut data = vec![0u8; 8];
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
 
         let count = u64::from_le_bytes(data[0..8].try_into().unwrap());
+        println!("count: {} offset: {}", count, offset);
 
         let mut off = offset + 8;
         let protocols = (0..count)
@@ -406,7 +532,7 @@ impl ObjCProtocolList {
             })
             .collect();
 
-        ObjCProtocolList { count, protocols }
+        Ok(ObjCProtocolList { count, protocols })
     }
 }
 
@@ -456,7 +582,7 @@ impl ObjCClassRO {
 
         let base_protocols_off = macho.vm_addr_to_offset(base_protocols)?;
         let base_protocols = if base_protocols_off != 0 {
-            Some(ObjCProtocolList::parse(macho, base_protocols_off))
+            Some(ObjCProtocolList::parse(macho, base_protocols_off)?)
         } else {
             None
         };
@@ -666,6 +792,7 @@ pub struct ObjCInfo {
     pub selrefs: Vec<ObjCSelRef>,
     pub classes: Vec<ObjCClass>,
     pub imageinfo: Option<ObjCImageInfo>,
+    pub protocols: Vec<ObjCProtocol>,
 }
 
 impl ObjCInfo {
@@ -673,11 +800,13 @@ impl ObjCInfo {
         let imageinfo = ObjCImageInfo::parse(macho);
         let selrefs = ObjCSelRef::parse_selrefs(macho);
         let classes = ObjCClass::parse_classlist(macho);
+        let protocols = ObjCProtocol::parse_protolist(macho);
 
         Some(ObjCInfo {
             classes,
             selrefs,
             imageinfo,
+            protocols,
         })
     }
 }
