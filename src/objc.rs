@@ -1,8 +1,8 @@
 use bitflags::bitflags;
-use std::{
-    io::{Read, Seek, SeekFrom},
-    rc::Rc,
-};
+use lazy_static::lazy_static;
+use std::collections::HashMap;
+use std::io::{Read, Seek, SeekFrom};
+use std::sync::{Arc, Mutex};
 
 use num_derive::FromPrimitive;
 
@@ -72,7 +72,7 @@ impl ObjCImageInfo {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObjCProperty {
     pub name: String,
     pub attributes: String,
@@ -97,7 +97,7 @@ impl ObjCProperty {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObjCPropertyList {
     pub entsize: u32,
     pub count: u32,
@@ -192,7 +192,7 @@ impl ObjCCategory {
             ImageValue::Bind(b) => ObjCClassPtr::External(b),
             ImageValue::Value(v) | ImageValue::Rebase(v) => {
                 let off = macho.vm_addr_to_offset(v)?;
-                ObjCClassPtr::Class(Rc::new(ObjCClass::parse(macho, off)?))
+                ObjCClassPtr::Class(Arc::new(ObjCClass::parse(macho, off)?))
             }
         };
 
@@ -243,7 +243,7 @@ impl ObjCCategory {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObjCIVar {
     pub offset: u32,
     pub name: String,
@@ -286,7 +286,7 @@ impl ObjCIVar {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObjCIVarList {
     pub entsize: u32,
     pub count: u32,
@@ -357,7 +357,7 @@ impl ObjCMethodListSizeAndFlags {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObjCMethodList {
     pub size_and_flags: ObjCMethodListSizeAndFlags,
     pub count: u32,
@@ -403,7 +403,7 @@ impl ObjCMethodList {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObjCMethod {
     pub name: String,
     pub types: String,
@@ -463,7 +463,7 @@ impl ObjCMethod {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObjCProtocol {
     pub isa: Option<ObjCClassPtr>,
     pub name: String,
@@ -570,7 +570,7 @@ impl ObjCProtocol {
         let isa = macho.read_offset_u64(offset)?.unwrap()?;
         let isa = if isa != 0 {
             let off = macho.vm_addr_to_offset(isa)?;
-            Some(ObjCClassPtr::Class(Rc::new(ObjCClass::parse(macho, off)?)))
+            Some(ObjCClassPtr::Class(Arc::new(ObjCClass::parse(macho, off)?)))
         } else {
             None
         };
@@ -647,7 +647,7 @@ impl ObjCProtocol {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObjCProtocolList {
     pub count: u64,
     pub protocols: Vec<ObjCProtocol>,
@@ -686,7 +686,7 @@ impl ObjCProtocolList {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObjCClassRO {
     pub flags: u32,
     pub instance_start: u32,
@@ -767,19 +767,19 @@ impl ObjCClassRO {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ObjCClassPtr {
-    Class(Rc<ObjCClass>),
+    Class(Arc<ObjCClass>),
     External(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ObjCClassCache {
     Local(u64),
     External(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObjCClass {
     pub isa: Option<ObjCClassPtr>,
     pub superclass: Option<ObjCClassPtr>,
@@ -912,7 +912,21 @@ impl ObjCClass {
     }
 
     pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCClass> {
-        // TODO: Some recursive shenanigans to fill out the isa
+        lazy_static! {
+            static ref OBJC_CLASS_CACHE: Mutex<HashMap<u64, Arc<ObjCClass>>> =
+                Mutex::new(HashMap::new());
+        }
+
+        let cached = OBJC_CLASS_CACHE
+            .lock()
+            .unwrap()
+            .get(&offset)
+            .map(|cls| cls.clone());
+
+        if let Some(cls) = cached {
+            return Ok((*cls).clone());
+        }
+
         let mut cls_data = vec![0u8; 40];
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut cls_data).unwrap();
@@ -923,7 +937,7 @@ impl ObjCClass {
             ImageValue::Value(v) | ImageValue::Rebase(v) => {
                 let isa_off = macho.vm_addr_to_offset(v)?;
                 if isa_off != 0 {
-                    Some(ObjCClassPtr::Class(Rc::new(ObjCClass::parse(
+                    Some(ObjCClassPtr::Class(Arc::new(ObjCClass::parse(
                         macho, isa_off,
                     )?)))
                 } else {
@@ -937,7 +951,7 @@ impl ObjCClass {
             ImageValue::Value(v) | ImageValue::Rebase(v) => {
                 let superclass_off = macho.vm_addr_to_offset(v)?;
                 if superclass_off != 0 {
-                    Some(ObjCClassPtr::Class(Rc::new(ObjCClass::parse(
+                    Some(ObjCClassPtr::Class(Arc::new(ObjCClass::parse(
                         macho,
                         superclass_off,
                     )?)))
@@ -963,13 +977,20 @@ impl ObjCClass {
         let ro_vmaddr = macho.read_offset_u64(offset + 32)?.unwrap()?;
         let ro = ObjCClassRO::parse(macho, ro_vmaddr)?;
 
-        Ok(ObjCClass {
+        let cls = ObjCClass {
             isa,
             superclass,
             cache,
             vtable,
             ro,
-        })
+        };
+
+        OBJC_CLASS_CACHE
+            .lock()
+            .unwrap()
+            .insert(offset, Arc::new(cls.clone()));
+
+        Ok(cls)
     }
 }
 
