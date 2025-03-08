@@ -580,6 +580,18 @@ impl DyldPointerFixup {
             })
         })
     }
+
+    pub fn bind_symbol_name(self) -> Option<String> {
+        match self {
+            DyldPointerFixup::Arm64eBind24(fixup) => Some(fixup.ordinal),
+            DyldPointerFixup::Arm64eAuthBind24(fixup) => Some(fixup.ordinal),
+            DyldPointerFixup::Ptr32Bind(fixup) => Some(fixup.ordinal),
+            DyldPointerFixup::Ptr64Bind(fixup) => Some(fixup.ordinal),
+            DyldPointerFixup::Arm64eBind(fixup) => Some(fixup.ordinal),
+            DyldPointerFixup::Arm64eAuthBind(fixup) => Some(fixup.ordinal),
+            _ => None,
+        }
+    }
 }
 
 impl DyldPointerFixup {

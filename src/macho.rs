@@ -374,6 +374,25 @@ impl LoadCommand {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum ImageValue {
+    Value(u64),
+    Rebase(u64),
+    Bind(String),
+}
+
+impl ImageValue {
+    pub fn unwrap(&self) -> MachOResult<u64> {
+        match self {
+            ImageValue::Value(v) => Ok(*v),
+            ImageValue::Rebase(v) => Ok(*v),
+            _ => Err(MachOErr {
+                detail: "Unexpected bind value during ImageValue unwrap".to_string(),
+            }),
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct MachO<T: Seek + Read> {
@@ -425,7 +444,7 @@ impl<T: Seek + Read> MachO<T> {
             .is_some()
     }
 
-    pub fn read_offset_u64(&mut self, offset: u64) -> MachOResult<u64> {
+    pub fn read_offset_u64(&mut self, offset: u64) -> MachOResult<ImageValue> {
         if !self.is_valid_offset(offset) {
             return Err(MachOErr {
                 detail: format!("Invalid offset: 0x{:x}", offset),
@@ -448,16 +467,25 @@ impl<T: Seek + Read> MachO<T> {
 
         if !dyldfixup.is_empty() {
             let fixup = dyldfixup[0];
-            let value = fixup.fixup.clone().rebase_base_vm_addr(&self.load_commands);
-            if value.is_some() {
-                return Ok(value.unwrap());
+            if fixup.fixup.clone().is_rebase() {
+                return Ok(ImageValue::Rebase(
+                    fixup
+                        .fixup
+                        .clone()
+                        .rebase_base_vm_addr(&self.load_commands)
+                        .unwrap(),
+                ));
+            } else {
+                return Ok(ImageValue::Bind(
+                    fixup.fixup.clone().bind_symbol_name().unwrap(),
+                ));
             }
         }
 
         let mut value = [0u8; 8];
         self.buf.seek(SeekFrom::Start(offset)).unwrap();
         self.buf.read_exact(&mut value).unwrap();
-        Ok(u64::from_le_bytes(value))
+        Ok(ImageValue::Value(u64::from_le_bytes(value)))
     }
 
     pub fn read_offset_u32(&mut self, offset: u64) -> MachOResult<u32> {
@@ -499,7 +527,7 @@ impl<T: Seek + Read> MachO<T> {
         Ok(vm_addr)
     }
 
-    pub fn read_vm_addr_u64(&mut self, vm_addr: u64) -> MachOResult<u64> {
+    pub fn read_vm_addr_u64(&mut self, vm_addr: u64) -> MachOResult<ImageValue> {
         let offset = self.vm_addr_to_offset(vm_addr)?;
         self.read_offset_u64(offset)
     }

@@ -1,9 +1,12 @@
 use bitflags::bitflags;
-use std::io::{Read, Seek, SeekFrom};
+use std::{
+    io::{Read, Seek, SeekFrom},
+    rc::Rc,
+};
 
 use num_derive::FromPrimitive;
 
-use crate::macho::{LoadCommand, MachO, MachOErr, MachOResult};
+use crate::macho::{ImageValue, LoadCommand, MachO, MachOErr, MachOResult};
 
 bitflags::bitflags! {
     #[derive(Debug)]
@@ -81,8 +84,8 @@ impl ObjCProperty {
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
 
-        let name = macho.read_offset_u64(offset)?;
-        let attributes = macho.read_offset_u64(offset + 8)?;
+        let name = macho.read_offset_u64(offset)?.unwrap()?;
+        let attributes = macho.read_offset_u64(offset + 8)?.unwrap()?;
 
         let name_off = macho.vm_addr_to_offset(name)?;
         let name = macho.read_null_terminated_string(name_off)?;
@@ -155,8 +158,8 @@ impl ObjCIVar {
         let offset_ = u32::from_le_bytes(data[0..4].try_into().map_err(|_| MachOErr {
             detail: "Failed to parse offset".to_string(),
         })?);
-        let name = macho.read_offset_u64(offset + 8)?;
-        let type_ = macho.read_offset_u64(offset + 16)?;
+        let name = macho.read_offset_u64(offset + 8)?.unwrap()?;
+        let type_ = macho.read_offset_u64(offset + 16)?.unwrap()?;
         let alignment = u32::from_le_bytes(data[24..28].try_into().map_err(|_| MachOErr {
             detail: "Failed to parse alignment".to_string(),
         })?);
@@ -316,7 +319,7 @@ impl ObjCMethod {
 
         // TODO: Clean this up so that machos with invalid objc info, i.e. those
         // produced by dsc_extractor, don't crash
-        let sel_vmaddr = macho.read_offset_u64(name_off as u64)?;
+        let sel_vmaddr = macho.read_offset_u64(name_off as u64)?.unwrap()?;
         let sel_off = macho.vm_addr_to_offset(sel_vmaddr)?;
         let name = macho.read_null_terminated_string(sel_off)?;
         let types = macho.read_null_terminated_string(types_off as u64)?;
@@ -352,17 +355,17 @@ impl ObjCProtocol {
 
         // TODO: A bunch of these fields can be resolved, but there will be some repetition. Think
         // about how this can be cached.
-        let isa = macho.read_offset_u64(offset)?;
-        let name = macho.read_offset_u64(offset + 8)?;
-        let protocols = macho.read_offset_u64(offset + 16)?;
-        let instance_methods = macho.read_offset_u64(offset + 24)?;
-        let class_methods = macho.read_offset_u64(offset + 32)?;
-        let optional_instance_methods = macho.read_offset_u64(offset + 40)?;
-        let optional_class_methods = macho.read_offset_u64(offset + 48)?;
-        let instance_properties = macho.read_offset_u64(offset + 56)?;
+        let isa = macho.read_offset_u64(offset)?.unwrap()?;
+        let name = macho.read_offset_u64(offset + 8)?.unwrap()?;
+        let protocols = macho.read_offset_u64(offset + 16)?.unwrap()?;
+        let instance_methods = macho.read_offset_u64(offset + 24)?.unwrap()?;
+        let class_methods = macho.read_offset_u64(offset + 32)?.unwrap()?;
+        let optional_instance_methods = macho.read_offset_u64(offset + 40)?.unwrap()?;
+        let optional_class_methods = macho.read_offset_u64(offset + 48)?.unwrap()?;
+        let instance_properties = macho.read_offset_u64(offset + 56)?.unwrap()?;
         let size = u32::from_le_bytes(data[64..68].try_into().unwrap());
         let flags = u32::from_le_bytes(data[68..72].try_into().unwrap());
-        let extended_method_types = macho.read_offset_u64(offset + 72)?;
+        let extended_method_types = macho.read_offset_u64(offset + 72)?.unwrap()?;
 
         Ok(ObjCProtocol {
             isa,
@@ -434,12 +437,12 @@ impl ObjCClassRO {
         let instance_size = u32::from_le_bytes(ro_data[8..12].try_into().unwrap()) as u32;
         let reserved = u32::from_le_bytes(ro_data[12..16].try_into().unwrap()) as u32;
         let ivar_layout = u64::from_le_bytes(ro_data[16..24].try_into().unwrap()) as u64;
-        let name = macho.read_offset_u64(file_off + 24)?;
-        let base_methods = macho.read_offset_u64(file_off + 32)?;
-        let base_protocols = macho.read_offset_u64(file_off + 40)?;
-        let ivars = macho.read_offset_u64(file_off + 48)?;
+        let name = macho.read_offset_u64(file_off + 24)?.unwrap()?;
+        let base_methods = macho.read_offset_u64(file_off + 32)?.unwrap()?;
+        let base_protocols = macho.read_offset_u64(file_off + 40)?.unwrap()?;
+        let ivars = macho.read_offset_u64(file_off + 48)?.unwrap()?;
         let weak_ivar_layout = u64::from_le_bytes(ro_data[56..64].try_into().unwrap());
-        let base_properties = macho.read_offset_u64(file_off + 64)?;
+        let base_properties = macho.read_offset_u64(file_off + 64)?.unwrap()?;
 
         let name_off = macho.vm_addr_to_offset(name).unwrap();
         let name_str = macho.read_null_terminated_string(name_off)?;
@@ -489,10 +492,22 @@ impl ObjCClassRO {
 }
 
 #[derive(Debug)]
+pub enum ObjCClassPtr {
+    Class(Rc<ObjCClass>),
+    External(String),
+}
+
+#[derive(Debug)]
+pub enum ObjCClassCache {
+    Local(u64),
+    External(String),
+}
+
+#[derive(Debug)]
 pub struct ObjCClass {
-    pub isa: u64,
-    pub superclass: u64,
-    pub cache: u64,
+    pub isa: Option<ObjCClassPtr>,
+    pub superclass: Option<ObjCClassPtr>,
+    pub cache: Option<ObjCClassCache>,
     pub vtable: u64,
     pub ro: ObjCClassRO,
 }
@@ -522,6 +537,7 @@ impl ObjCClass {
         let vmaddrs: Vec<u64> = offsets
             .into_iter()
             .filter_map(|offset: u64| macho.read_offset_u64(offset).ok())
+            .filter_map(|vmaddr| vmaddr.unwrap().ok())
             .collect();
 
         let class_offs: Vec<u64> = vmaddrs
@@ -544,14 +560,50 @@ impl ObjCClass {
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut cls_data).unwrap();
 
-        let isa = macho.read_offset_u64(offset)?;
-        // When using chained fixups, `superclass` and `cache` will be BIND types, so
-        // it's not clear how to resolve them. It would be easy to get a raw string of the
-        // class from the chained fixups, but what to do in non-chained fixup binaries?
-        let superclass = macho.read_offset_u64(offset + 8)?;
-        let cache = macho.read_offset_u64(offset + 16)?;
-        let vtable = macho.read_offset_u64(offset + 24)?;
-        let ro_vmaddr = macho.read_offset_u64(offset + 32)?;
+        // The ISA field will eventually be an NSObject pointer which is external to the
+        // current binary.
+        let isa = match macho.read_offset_u64(offset)? {
+            ImageValue::Value(v) | ImageValue::Rebase(v) => {
+                let isa_off = macho.vm_addr_to_offset(v)?;
+                if isa_off != 0 {
+                    Some(ObjCClassPtr::Class(Rc::new(ObjCClass::parse(
+                        macho, isa_off,
+                    )?)))
+                } else {
+                    None
+                }
+            }
+            ImageValue::Bind(b) => Some(ObjCClassPtr::External(b)),
+        };
+
+        let superclass = match macho.read_offset_u64(offset + 8)? {
+            ImageValue::Value(v) | ImageValue::Rebase(v) => {
+                let superclass_off = macho.vm_addr_to_offset(v)?;
+                if superclass_off != 0 {
+                    Some(ObjCClassPtr::Class(Rc::new(ObjCClass::parse(
+                        macho,
+                        superclass_off,
+                    )?)))
+                } else {
+                    None
+                }
+            }
+            ImageValue::Bind(b) => Some(ObjCClassPtr::External(b)),
+        };
+
+        let cache = match macho.read_offset_u64(offset + 16)? {
+            ImageValue::Value(v) | ImageValue::Rebase(v) => {
+                if v != 0 {
+                    Some(ObjCClassCache::Local(v))
+                } else {
+                    None
+                }
+            }
+            ImageValue::Bind(b) => Some(ObjCClassCache::External(b)),
+        };
+
+        let vtable = macho.read_offset_u64(offset + 24)?.unwrap()?;
+        let ro_vmaddr = macho.read_offset_u64(offset + 32)?.unwrap()?;
         let ro = ObjCClassRO::parse(macho, ro_vmaddr)?;
 
         Ok(ObjCClass {
@@ -571,7 +623,14 @@ pub struct ObjCSelRef {
 }
 
 impl ObjCSelRef {
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCSelRef> {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCSelRef> {
+        let vmaddr = macho.read_offset_u64(offset)?.unwrap()?;
+        let sel_off = macho.vm_addr_to_offset(vmaddr)?;
+        let sel = macho.read_null_terminated_string(sel_off)?;
+
+        Ok(ObjCSelRef { sel, vmaddr })
+    }
+    pub fn parse_selrefs<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCSelRef> {
         let selrefs = macho
             .load_commands
             .iter()
@@ -592,26 +651,11 @@ impl ObjCSelRef {
             .map(|i| selrefs.offset as u64 + i * 8u64)
             .collect();
 
-        let vmaddrs: Vec<u64> = offsets
-            .into_iter()
-            .filter_map(|offset: u64| macho.read_offset_u64(offset).ok())
-            .collect();
-
-        let sel_offs: Vec<u64> = vmaddrs
+        offsets
             .iter()
-            .filter_map(|vmaddr| macho.vm_addr_to_offset(vmaddr.clone()).ok())
-            .collect();
-
-        sel_offs
-            .iter()
-            .zip(vmaddrs.iter())
-            .map(|(offset, vmaddr)| {
-                let sel = macho.read_null_terminated_string(*offset).unwrap();
-
-                ObjCSelRef {
-                    sel,
-                    vmaddr: *vmaddr,
-                }
+            .filter_map(|offset| {
+                let selref = ObjCSelRef::parse(macho, *offset);
+                selref.ok()
             })
             .collect()
     }
@@ -627,7 +671,7 @@ pub struct ObjCInfo {
 impl ObjCInfo {
     pub fn parse<T: Read + Seek>(macho: &mut MachO<T>) -> Option<ObjCInfo> {
         let imageinfo = ObjCImageInfo::parse(macho);
-        let selrefs = ObjCSelRef::parse(macho);
+        let selrefs = ObjCSelRef::parse_selrefs(macho);
         let classes = ObjCClass::parse_classlist(macho);
 
         Some(ObjCInfo {
