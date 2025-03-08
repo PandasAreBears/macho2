@@ -479,6 +479,47 @@ pub struct ObjCProtocol {
 }
 
 impl ObjCProtocol {
+    pub fn parse_protorefs<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCProtocol> {
+        let protorefs = macho
+            .load_commands
+            .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(seg) => Some(seg),
+                _ => None,
+            })
+            .flat_map(|seg| &seg.sections)
+            .find(|sect| sect.sectname == "__objc_protorefs");
+
+        let protorefs = match protorefs {
+            Some(protorefs) => protorefs,
+            None => return Vec::new(),
+        };
+
+        let nrefs = protorefs.size / 8;
+        let offsets: Vec<u64> = (0..nrefs)
+            .map(|i| protorefs.offset as u64 + i * 8u64)
+            .collect();
+
+        let vmaddrs: Vec<u64> = offsets
+            .into_iter()
+            .filter_map(|offset: u64| macho.read_offset_u64(offset).ok())
+            .filter_map(|vmaddr| vmaddr.unwrap().ok())
+            .collect();
+
+        let prot_offs: Vec<u64> = vmaddrs
+            .iter()
+            .filter_map(|cls_addr| macho.vm_addr_to_offset(cls_addr.clone()).ok())
+            .collect();
+
+        prot_offs
+            .iter()
+            .filter_map(|offset| {
+                let protoref = ObjCProtocol::parse(macho, *offset);
+                protoref.ok()
+            })
+            .collect()
+    }
+
     pub fn parse_protolist<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCProtocol> {
         let protolist = macho
             .load_commands
@@ -748,6 +789,87 @@ pub struct ObjCClass {
 }
 
 impl ObjCClass {
+    pub fn parse_classrefs<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCClass> {
+        let classrefs = macho
+            .load_commands
+            .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(seg) => Some(seg),
+                _ => None,
+            })
+            .flat_map(|seg| &seg.sections)
+            .find(|sect| sect.sectname == "__objc_classrefs");
+
+        let classrefs = match classrefs {
+            Some(classrefs) => classrefs,
+            None => return Vec::new(),
+        };
+
+        let nrefs = classrefs.size / 8;
+        let offsets: Vec<u64> = (0..nrefs)
+            .map(|i| classrefs.offset as u64 + i * 8u64)
+            .collect();
+
+        let vmaddrs: Vec<u64> = offsets
+            .into_iter()
+            .filter_map(|offset: u64| macho.read_offset_u64(offset).ok())
+            .filter_map(|vmaddr| vmaddr.unwrap().ok())
+            .collect();
+
+        let class_offs: Vec<u64> = vmaddrs
+            .iter()
+            .filter_map(|cls_addr| macho.vm_addr_to_offset(cls_addr.clone()).ok())
+            .collect();
+
+        class_offs
+            .iter()
+            .filter_map(|offset| {
+                let cls = ObjCClass::parse(macho, *offset);
+                cls.ok()
+            })
+            .collect()
+    }
+
+    pub fn parse_superrefs<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCClass> {
+        let superrefs = macho
+            .load_commands
+            .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(seg) => Some(seg),
+                _ => None,
+            })
+            .flat_map(|seg| &seg.sections)
+            .find(|sect| sect.sectname == "__objc_superrefs");
+
+        let superrefs = match superrefs {
+            Some(superrefs) => superrefs,
+            None => return Vec::new(),
+        };
+
+        let nrefs = superrefs.size / 8;
+        let offsets: Vec<u64> = (0..nrefs)
+            .map(|i| superrefs.offset as u64 + i * 8u64)
+            .collect();
+
+        let vmaddrs: Vec<u64> = offsets
+            .into_iter()
+            .filter_map(|offset: u64| macho.read_offset_u64(offset).ok())
+            .filter_map(|vmaddr| vmaddr.unwrap().ok())
+            .collect();
+
+        let class_offs: Vec<u64> = vmaddrs
+            .iter()
+            .filter_map(|cls_addr| macho.vm_addr_to_offset(cls_addr.clone()).ok())
+            .collect();
+
+        class_offs
+            .iter()
+            .filter_map(|offset| {
+                let cls = ObjCClass::parse(macho, *offset);
+                cls.ok()
+            })
+            .collect()
+    }
     pub fn parse_classlist<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCClass> {
         let classlist = macho
             .load_commands
@@ -903,9 +1025,9 @@ pub struct ObjCInfo {
     pub imageinfo: Option<ObjCImageInfo>,
     pub protocols: Vec<ObjCProtocol>,
     pub categories: Vec<ObjCCategory>,
-    // pub protocol_refs: ?
-    // pub class_refs: ?
-    // pub super_refs: ?
+    pub protocol_refs: Vec<ObjCProtocol>,
+    pub class_refs: Vec<ObjCClass>,
+    pub super_refs: Vec<ObjCClass>,
 }
 
 impl ObjCInfo {
@@ -915,6 +1037,9 @@ impl ObjCInfo {
         let classes = ObjCClass::parse_classlist(macho);
         let protocols = ObjCProtocol::parse_protolist(macho);
         let categories: Vec<ObjCCategory> = ObjCCategory::parse_catlist(macho);
+        let protocol_refs = ObjCProtocol::parse_protorefs(macho);
+        let class_refs = ObjCClass::parse_classrefs(macho);
+        let super_refs = ObjCClass::parse_superrefs(macho);
 
         Some(ObjCInfo {
             classes,
@@ -922,6 +1047,9 @@ impl ObjCInfo {
             imageinfo,
             protocols,
             categories,
+            protocol_refs,
+            class_refs,
+            super_refs,
         })
     }
 }

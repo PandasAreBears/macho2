@@ -64,14 +64,19 @@ fn main() -> MachOResult<()> {
 }
 
 fn print_objc<T: Read + Seek>(macho: &mut MachO<T>) {
-    macho.load_commands.iter().for_each(|lc| match lc {
-        LoadCommand::DyldChainedFixups(fixup) => {
-            println!("{:#?}", fixup);
-        }
-        _ => {}
-    });
+    // macho.load_commands.iter().for_each(|lc| match lc {
+    //     LoadCommand::DyldChainedFixups(fixup) => {
+    // println!("{:#?}", fixup);
+    //     }
+    //     _ => {}
+    // });
     let objc_info = ObjCInfo::parse(macho).unwrap();
     println!("{:#?}", objc_info.selrefs);
     println!("{:#?}", objc_info.classes);
+    println!("{:#?}", objc_info.protocols);
     println!("{:#?}", objc_info.imageinfo);
+    println!("{:#?}", objc_info.categories);
+    println!("{:#?}", objc_info.protocol_refs);
+    println!("{:#?}", objc_info.class_refs);
+    println!("{:#?}", objc_info.super_refs);
 }
