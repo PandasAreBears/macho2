@@ -350,6 +350,8 @@ impl ObjCProtocol {
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
 
+        // TODO: A bunch of these fields can be resolved, but there will be some repetition. Think
+        // about how this can be cached.
         let isa = macho.read_offset_u64(offset)?;
         let name = macho.read_offset_u64(offset + 8)?;
         let protocols = macho.read_offset_u64(offset + 16)?;
@@ -427,8 +429,6 @@ impl ObjCClassRO {
         macho.buf.seek(SeekFrom::Start(file_off)).unwrap();
         macho.buf.read_exact(&mut ro_data).unwrap();
 
-        // TODO: A bunch of these fields can be resolved, but there will be some repetition. Think
-        // about how this can be cached.
         let flags = u32::from_le_bytes(ro_data[0..4].try_into().unwrap()) as u32;
         let instance_start = u32::from_le_bytes(ro_data[4..8].try_into().unwrap()) as u32;
         let instance_size = u32::from_le_bytes(ro_data[8..12].try_into().unwrap()) as u32;
@@ -498,8 +498,7 @@ pub struct ObjCClass {
 }
 
 impl ObjCClass {
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCClass> {
-        // TODO: Some recursive shenanigans to fill out the isa
+    pub fn parse_classlist<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCClass> {
         let classlist = macho
             .load_commands
             .iter()
@@ -532,30 +531,36 @@ impl ObjCClass {
 
         class_offs
             .iter()
-            .map(|offset| {
-                let mut cls_data = vec![0u8; 40];
-                macho.buf.seek(SeekFrom::Start(*offset)).unwrap();
-                macho.buf.read_exact(&mut cls_data).unwrap();
-
-                let isa = macho.read_offset_u64(*offset).unwrap();
-                // When using chained fixups, `superclass` and `cache` will be BIND types, so
-                // it's not clear how to resolve them. It would be easy to get a raw string of the
-                // class from the chained fixups, but what to do in non-chained fixup binaries?
-                let superclass = macho.read_offset_u64(*offset + 8).unwrap();
-                let cache = macho.read_offset_u64(*offset + 16).unwrap();
-                let vtable = macho.read_offset_u64(*offset + 24).unwrap();
-                let ro_vmaddr = macho.read_offset_u64(*offset + 32).unwrap();
-                let ro = ObjCClassRO::parse(macho, ro_vmaddr).unwrap();
-
-                ObjCClass {
-                    isa,
-                    superclass,
-                    cache,
-                    vtable,
-                    ro,
-                }
+            .filter_map(|offset| {
+                let cls = ObjCClass::parse(macho, *offset);
+                cls.ok()
             })
             .collect()
+    }
+
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCClass> {
+        // TODO: Some recursive shenanigans to fill out the isa
+        let mut cls_data = vec![0u8; 40];
+        macho.buf.seek(SeekFrom::Start(offset)).unwrap();
+        macho.buf.read_exact(&mut cls_data).unwrap();
+
+        let isa = macho.read_offset_u64(offset)?;
+        // When using chained fixups, `superclass` and `cache` will be BIND types, so
+        // it's not clear how to resolve them. It would be easy to get a raw string of the
+        // class from the chained fixups, but what to do in non-chained fixup binaries?
+        let superclass = macho.read_offset_u64(offset + 8)?;
+        let cache = macho.read_offset_u64(offset + 16)?;
+        let vtable = macho.read_offset_u64(offset + 24)?;
+        let ro_vmaddr = macho.read_offset_u64(offset + 32)?;
+        let ro = ObjCClassRO::parse(macho, ro_vmaddr)?;
+
+        Ok(ObjCClass {
+            isa,
+            superclass,
+            cache,
+            vtable,
+            ro,
+        })
     }
 }
 
@@ -623,7 +628,7 @@ impl ObjCInfo {
     pub fn parse<T: Read + Seek>(macho: &mut MachO<T>) -> Option<ObjCInfo> {
         let imageinfo = ObjCImageInfo::parse(macho);
         let selrefs = ObjCSelRef::parse(macho);
-        let classes = ObjCClass::parse(macho);
+        let classes = ObjCClass::parse_classlist(macho);
 
         Some(ObjCInfo {
             classes,
