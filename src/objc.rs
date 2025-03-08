@@ -132,12 +132,115 @@ impl ObjCPropertyList {
 
 #[derive(Debug)]
 pub struct ObjCCategory {
-    pub name: u64,
-    pub cls: u64,
-    pub instance_methods: u64,
-    pub class_methods: u64,
-    pub protocols: u64,
-    pub instance_properties: u64,
+    pub name: String,
+    pub cls: ObjCClassPtr,
+    pub instance_methods: Option<ObjCMethodList>,
+    pub class_methods: Option<ObjCMethodList>,
+    pub protocols: Option<ObjCProtocolList>,
+    pub instance_properties: Option<ObjCPropertyList>,
+}
+
+impl ObjCCategory {
+    pub fn parse_catlist<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCCategory> {
+        let catlist = macho
+            .load_commands
+            .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(seg) => Some(seg),
+                _ => None,
+            })
+            .flat_map(|seg| &seg.sections)
+            .find(|sect| sect.sectname == "__objc_catlist");
+
+        let catlist = match catlist {
+            Some(catlist) => catlist,
+            None => return Vec::new(),
+        };
+
+        let nrefs = catlist.size / 8;
+        let offsets: Vec<u64> = (0..nrefs)
+            .map(|i| catlist.offset as u64 + i * 8u64)
+            .collect();
+
+        let vmaddrs: Vec<u64> = offsets
+            .into_iter()
+            .filter_map(|offset: u64| macho.read_offset_u64(offset).ok())
+            .filter_map(|vmaddr| vmaddr.unwrap().ok())
+            .collect();
+
+        let cat_offs: Vec<u64> = vmaddrs
+            .iter()
+            .filter_map(|cls_addr| macho.vm_addr_to_offset(cls_addr.clone()).ok())
+            .collect();
+
+        cat_offs
+            .iter()
+            .filter_map(|offset| {
+                let cat = ObjCCategory::parse(macho, *offset);
+                cat.ok()
+            })
+            .collect()
+    }
+
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCCategory> {
+        let mut data = vec![0u8; 32];
+        macho.buf.seek(SeekFrom::Start(offset)).unwrap();
+        macho.buf.read_exact(&mut data).unwrap();
+
+        let name = macho.read_offset_u64(offset)?.unwrap()?;
+        let cls = match macho.read_offset_u64(offset + 8)? {
+            ImageValue::Bind(b) => ObjCClassPtr::External(b),
+            ImageValue::Value(v) | ImageValue::Rebase(v) => {
+                let off = macho.vm_addr_to_offset(v)?;
+                ObjCClassPtr::Class(Rc::new(ObjCClass::parse(macho, off)?))
+            }
+        };
+
+        let instance_methods = macho.read_offset_u64(offset + 16)?.unwrap()?;
+        let class_methods = macho.read_offset_u64(offset + 24)?.unwrap()?;
+        let protocols = macho.read_offset_u64(offset + 32)?.unwrap()?;
+        let instance_properties = macho.read_offset_u64(offset + 40)?.unwrap()?;
+
+        let name_off = macho.vm_addr_to_offset(name)?;
+        let name = macho.read_null_terminated_string(name_off)?;
+
+        let instance_methods = if instance_methods != 0 {
+            let off = macho.vm_addr_to_offset(instance_methods)?;
+            Some(ObjCMethodList::parse(macho, off))
+        } else {
+            None
+        };
+
+        let class_methods = if class_methods != 0 {
+            let off = macho.vm_addr_to_offset(class_methods)?;
+            Some(ObjCMethodList::parse(macho, off))
+        } else {
+            None
+        };
+
+        let protocols = if protocols != 0 {
+            let off = macho.vm_addr_to_offset(protocols)?;
+            Some(ObjCProtocolList::parse(macho, off)?)
+        } else {
+            None
+        };
+
+        let instance_properties = if instance_properties != 0 {
+            let off = macho.vm_addr_to_offset(instance_properties)?;
+            Some(ObjCPropertyList::parse(macho, off))
+        } else {
+            None
+        };
+
+        Ok(ObjCCategory {
+            name,
+            cls,
+            instance_methods,
+            class_methods,
+            protocols,
+            instance_properties,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -364,7 +467,7 @@ impl ObjCMethod {
 pub struct ObjCProtocol {
     pub isa: Option<ObjCClassPtr>,
     pub name: String,
-    pub protocols: u64, // Option<ObjCProtocolList>,
+    pub protocols: Option<ObjCProtocolList>,
     pub instance_methods: Option<ObjCMethodList>,
     pub class_methods: Option<ObjCMethodList>,
     pub optional_instance_methods: Option<ObjCMethodList>,
@@ -412,21 +515,12 @@ impl ObjCProtocol {
             .iter()
             .filter_map(|offset| {
                 let cls = ObjCProtocol::parse(macho, *offset);
-                if cls.is_err() {
-                    println!(
-                        "Failed to parse protocol at offset: {:#x} {}",
-                        offset,
-                        cls.err().unwrap()
-                    );
-                    return None;
-                }
                 cls.ok()
             })
             .collect()
     }
 
     pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCProtocol> {
-        println!("offset: {:#x}", offset);
         let mut data = vec![0u8; 80];
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
@@ -445,6 +539,13 @@ impl ObjCProtocol {
         let name = macho.read_null_terminated_string(name_off)?;
 
         let protocols = macho.read_offset_u64(offset + 16)?.unwrap()?;
+        let protocols = if protocols != 0 {
+            let off = macho.vm_addr_to_offset(protocols)?;
+            Some(ObjCProtocolList::parse(macho, off)?)
+        } else {
+            None
+        };
+
         let instance_methods = macho.read_offset_u64(offset + 24)?.unwrap()?;
         let instance_methods = if instance_methods != 0 {
             let off = macho.vm_addr_to_offset(instance_methods)?;
@@ -521,13 +622,21 @@ impl ObjCProtocolList {
         macho.buf.read_exact(&mut data).unwrap();
 
         let count = u64::from_le_bytes(data[0..8].try_into().unwrap());
-        println!("count: {} offset: {}", count, offset);
 
-        let mut off = offset + 8;
-        let protocols = (0..count)
-            .filter_map(|_| {
-                let protocol = ObjCProtocol::parse(macho, off);
-                off += 80;
+        let vmaddrs: Vec<u64> = (0..count)
+            .filter_map(|i| macho.read_offset_u64(offset + 8 * (i + 1)).ok())
+            .filter_map(|vmaddr| vmaddr.unwrap().ok())
+            .collect();
+
+        let offsets: Vec<u64> = vmaddrs
+            .iter()
+            .filter_map(|vmaddr| macho.vm_addr_to_offset(*vmaddr).ok())
+            .collect();
+
+        let protocols: Vec<ObjCProtocol> = offsets
+            .iter()
+            .filter_map(|off| {
+                let protocol = ObjCProtocol::parse(macho, *off);
                 protocol.ok()
             })
             .collect();
@@ -793,6 +902,10 @@ pub struct ObjCInfo {
     pub classes: Vec<ObjCClass>,
     pub imageinfo: Option<ObjCImageInfo>,
     pub protocols: Vec<ObjCProtocol>,
+    pub categories: Vec<ObjCCategory>,
+    // pub protocol_refs: ?
+    // pub class_refs: ?
+    // pub super_refs: ?
 }
 
 impl ObjCInfo {
@@ -801,12 +914,14 @@ impl ObjCInfo {
         let selrefs = ObjCSelRef::parse_selrefs(macho);
         let classes = ObjCClass::parse_classlist(macho);
         let protocols = ObjCProtocol::parse_protolist(macho);
+        let categories: Vec<ObjCCategory> = ObjCCategory::parse_catlist(macho);
 
         Some(ObjCInfo {
             classes,
             selrefs,
             imageinfo,
             protocols,
+            categories,
         })
     }
 }
