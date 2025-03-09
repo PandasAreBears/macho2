@@ -819,7 +819,7 @@ impl ObjCProtocolList {
 
 #[derive(Debug, Clone)]
 pub struct ObjCClassRO {
-    pub flags: u32,
+    pub flags: u32, // TODO: populate this
     pub instance_start: u32,
     pub instance_size: u32,
     pub reserved: u32,
@@ -942,6 +942,7 @@ pub struct ObjCClass {
 }
 
 impl ObjCClass {
+    pub const CLASS_RO_BIT_MASK: u64 = 0x00007ffffffffff8;
     pub fn parse_classrefs<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCClass> {
         let classrefs = macho
             .load_commands
@@ -1128,7 +1129,7 @@ impl ObjCClass {
 
         let vtable = macho.read_offset_u64(offset + 24)?.unwrap()?;
         let ro_vmaddr = macho.read_offset_u64(offset + 32)?.unwrap()?;
-        let ro = ObjCClassRO::parse(macho, ro_vmaddr)?;
+        let ro = ObjCClassRO::parse(macho, ro_vmaddr & Self::CLASS_RO_BIT_MASK)?;
 
         let cls = ObjCClass {
             isa,
