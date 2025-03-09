@@ -64,19 +64,12 @@ fn main() -> MachOResult<()> {
 }
 
 fn print_objc<T: Read + Seek>(macho: &mut MachO<T>) {
-    // macho.load_commands.iter().for_each(|lc| match lc {
-    //     LoadCommand::DyldChainedFixups(fixup) => {
-    // println!("{:#?}", fixup);
-    //     }
-    //     _ => {}
-    // });
     let objc_info = ObjCInfo::parse(macho).unwrap();
-    println!("{:#?}", objc_info.selrefs);
-    println!("{:#?}", objc_info.classes);
-    println!("{:#?}", objc_info.protocols);
-    println!("{:#?}", objc_info.imageinfo);
-    println!("{:#?}", objc_info.categories);
-    println!("{:#?}", objc_info.protocol_refs);
-    println!("{:#?}", objc_info.class_refs);
-    println!("{:#?}", objc_info.super_refs);
+    println!("nselrefs={}", objc_info.selrefs.len());
+    println!("nclasses={}", objc_info.classes.len());
+    println!("nprotos={}", objc_info.protocols.len());
+    println!("ncats={}", objc_info.categories.len());
+    println!("nclassrefs={}", objc_info.class_refs.len());
+    println!("nprotorefs={}", objc_info.protocol_refs.len());
+    println!("nsuperrefs={}", objc_info.super_refs.len());
 }

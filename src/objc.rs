@@ -80,6 +80,21 @@ pub struct ObjCProperty {
 
 impl ObjCProperty {
     pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCProperty> {
+        lazy_static! {
+            static ref OBJC_PROPERTY_CACHE: Mutex<HashMap<u64, Arc<ObjCProperty>>> =
+                Mutex::new(HashMap::new());
+        }
+
+        let cached = OBJC_PROPERTY_CACHE
+            .lock()
+            .unwrap()
+            .get(&offset)
+            .map(|prop| prop.clone());
+
+        if let Some(prop) = cached {
+            return Ok((*prop).clone());
+        }
+
         let mut data = vec![0u8; 16];
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
@@ -93,7 +108,13 @@ impl ObjCProperty {
         let attributes_off = macho.vm_addr_to_offset(attributes)?;
         let attributes = macho.read_null_terminated_string(attributes_off)?;
 
-        Ok(ObjCProperty { name, attributes })
+        let prop = ObjCProperty { name, attributes };
+        OBJC_PROPERTY_CACHE
+            .lock()
+            .unwrap()
+            .insert(offset, Arc::new(prop.clone()));
+
+        Ok(prop)
     }
 }
 
@@ -130,7 +151,7 @@ impl ObjCPropertyList {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObjCCategory {
     pub name: String,
     pub cls: ObjCClassPtr,
@@ -183,6 +204,21 @@ impl ObjCCategory {
     }
 
     pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCCategory> {
+        lazy_static! {
+            static ref OBJC_CATEGORY_CACHE: Mutex<HashMap<u64, Arc<ObjCCategory>>> =
+                Mutex::new(HashMap::new());
+        }
+
+        let cached = OBJC_CATEGORY_CACHE
+            .lock()
+            .unwrap()
+            .get(&offset)
+            .map(|cat| cat.clone());
+
+        if let Some(cat) = cached {
+            return Ok((*cat).clone());
+        }
+
         let mut data = vec![0u8; 32];
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
@@ -232,14 +268,21 @@ impl ObjCCategory {
             None
         };
 
-        Ok(ObjCCategory {
+        let cat = ObjCCategory {
             name,
             cls,
             instance_methods,
             class_methods,
             protocols,
             instance_properties,
-        })
+        };
+
+        OBJC_CATEGORY_CACHE
+            .lock()
+            .unwrap()
+            .insert(offset, Arc::new(cat.clone()));
+
+        Ok(cat)
     }
 }
 
@@ -254,6 +297,21 @@ pub struct ObjCIVar {
 
 impl ObjCIVar {
     pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCIVar> {
+        lazy_static! {
+            static ref OBJC_IVAR_CACHE: Mutex<HashMap<u64, Arc<ObjCIVar>>> =
+                Mutex::new(HashMap::new());
+        }
+
+        let cached = OBJC_IVAR_CACHE
+            .lock()
+            .unwrap()
+            .get(&offset)
+            .map(|ivar| ivar.clone());
+
+        if let Some(ivar) = cached {
+            return Ok((*ivar).clone());
+        }
+
         let mut data = vec![0u8; 32];
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
@@ -276,13 +334,20 @@ impl ObjCIVar {
         let type_off = macho.vm_addr_to_offset(type_)?;
         let type_ = macho.read_null_terminated_string(type_off)?;
 
-        Ok(ObjCIVar {
+        let ivar = ObjCIVar {
             offset: offset_,
             name,
             type_,
             alignment,
             size,
-        })
+        };
+
+        OBJC_IVAR_CACHE
+            .lock()
+            .unwrap()
+            .insert(offset, Arc::new(ivar.clone()));
+
+        Ok(ivar)
     }
 }
 
@@ -415,6 +480,21 @@ impl ObjCMethod {
         macho: &mut MachO<T>,
         offset: u64,
     ) -> MachOResult<ObjCMethod> {
+        lazy_static! {
+            static ref OBJC_SMALL_METHOD_CACHE: Mutex<HashMap<u64, Arc<ObjCMethod>>> =
+                Mutex::new(HashMap::new());
+        }
+
+        let cached = OBJC_SMALL_METHOD_CACHE
+            .lock()
+            .unwrap()
+            .get(&offset)
+            .map(|method| method.clone());
+
+        if let Some(method) = cached {
+            return Ok((*method).clone());
+        }
+
         let mut data = vec![0u8; 12];
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
@@ -434,17 +514,39 @@ impl ObjCMethod {
         let name = macho.read_null_terminated_string(sel_off)?;
         let types = macho.read_null_terminated_string(types_off as u64)?;
 
-        Ok(ObjCMethod {
+        let method = ObjCMethod {
             name,
             types,
             imp: imp_off as u64,
-        })
+        };
+
+        OBJC_SMALL_METHOD_CACHE
+            .lock()
+            .unwrap()
+            .insert(offset, Arc::new(method.clone()));
+
+        Ok(method)
     }
 
     pub fn parse_normal<T: Read + Seek>(
         macho: &mut MachO<T>,
         offset: u64,
     ) -> MachOResult<ObjCMethod> {
+        lazy_static! {
+            static ref OBJC_METHOD_CACHE: Mutex<HashMap<u64, Arc<ObjCMethod>>> =
+                Mutex::new(HashMap::new());
+        }
+
+        let cached = OBJC_METHOD_CACHE
+            .lock()
+            .unwrap()
+            .get(&offset)
+            .map(|method| method.clone());
+
+        if let Some(method) = cached {
+            return Ok((*method).clone());
+        }
+
         let mut data = vec![0u8; 24];
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
@@ -459,7 +561,14 @@ impl ObjCMethod {
         let types_off = macho.vm_addr_to_offset(types)?;
         let types = macho.read_null_terminated_string(types_off)?;
 
-        Ok(ObjCMethod { name, types, imp })
+        let method = ObjCMethod { name, types, imp };
+
+        OBJC_METHOD_CACHE
+            .lock()
+            .unwrap()
+            .insert(offset, Arc::new(method.clone()));
+
+        Ok(method)
     }
 }
 
@@ -562,6 +671,21 @@ impl ObjCProtocol {
     }
 
     pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCProtocol> {
+        lazy_static! {
+            static ref OBJC_PROTOCOL_CACHE: Mutex<HashMap<u64, Arc<ObjCProtocol>>> =
+                Mutex::new(HashMap::new());
+        }
+
+        let cached = OBJC_PROTOCOL_CACHE
+            .lock()
+            .unwrap()
+            .get(&offset)
+            .map(|proto| proto.clone());
+
+        if let Some(proto) = cached {
+            return Ok((*proto).clone());
+        }
+
         let mut data = vec![0u8; 80];
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
@@ -631,7 +755,7 @@ impl ObjCProtocol {
         let flags = u32::from_le_bytes(data[68..72].try_into().unwrap());
         let extended_method_types = macho.read_offset_u64(offset + 72)?.unwrap()?;
 
-        Ok(ObjCProtocol {
+        let proto = ObjCProtocol {
             isa,
             name,
             protocols,
@@ -643,7 +767,14 @@ impl ObjCProtocol {
             size,
             flags,
             extended_method_types,
-        })
+        };
+
+        OBJC_PROTOCOL_CACHE
+            .lock()
+            .unwrap()
+            .insert(offset, Arc::new(proto.clone()));
+
+        Ok(proto)
     }
 }
 
@@ -703,6 +834,21 @@ pub struct ObjCClassRO {
 
 impl ObjCClassRO {
     pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, vmaddr: u64) -> MachOResult<ObjCClassRO> {
+        lazy_static! {
+            static ref OBJC_CLASSRO_CACHE: Mutex<HashMap<u64, Arc<ObjCClassRO>>> =
+                Mutex::new(HashMap::new());
+        }
+
+        let cached = OBJC_CLASSRO_CACHE
+            .lock()
+            .unwrap()
+            .get(&vmaddr)
+            .map(|clsro| clsro.clone());
+
+        if let Some(clsro) = cached {
+            return Ok((*clsro).clone());
+        }
+
         let file_off = macho.vm_addr_to_offset(vmaddr).unwrap();
         let mut ro_data = vec![0u8; 72];
         macho.buf.seek(SeekFrom::Start(file_off)).unwrap();
@@ -751,7 +897,7 @@ impl ObjCClassRO {
             None
         };
 
-        Ok(ObjCClassRO {
+        let clsro = ObjCClassRO {
             flags,
             instance_start,
             instance_size,
@@ -763,7 +909,14 @@ impl ObjCClassRO {
             ivars,
             weak_ivar_layout,
             base_properties,
-        })
+        };
+
+        OBJC_CLASSRO_CACHE
+            .lock()
+            .unwrap()
+            .insert(vmaddr, Arc::new(clsro.clone()));
+
+        Ok(clsro)
     }
 }
 
@@ -994,7 +1147,7 @@ impl ObjCClass {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObjCSelRef {
     pub sel: String,
     pub vmaddr: u64,
@@ -1002,11 +1155,33 @@ pub struct ObjCSelRef {
 
 impl ObjCSelRef {
     pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCSelRef> {
+        lazy_static! {
+            static ref OBJC_CLASSRO_CACHE: Mutex<HashMap<u64, Arc<ObjCSelRef>>> =
+                Mutex::new(HashMap::new());
+        }
+
+        let cached = OBJC_CLASSRO_CACHE
+            .lock()
+            .unwrap()
+            .get(&offset)
+            .map(|selref| selref.clone());
+
+        if let Some(selref) = cached {
+            return Ok((*selref).clone());
+        }
+
         let vmaddr = macho.read_offset_u64(offset)?.unwrap()?;
         let sel_off = macho.vm_addr_to_offset(vmaddr)?;
         let sel = macho.read_null_terminated_string(sel_off)?;
 
-        Ok(ObjCSelRef { sel, vmaddr })
+        let selref = ObjCSelRef { sel, vmaddr };
+
+        OBJC_CLASSRO_CACHE
+            .lock()
+            .unwrap()
+            .insert(offset, Arc::new(selref.clone()));
+
+        Ok(selref)
     }
     pub fn parse_selrefs<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCSelRef> {
         let selrefs = macho
