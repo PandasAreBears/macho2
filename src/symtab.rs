@@ -320,13 +320,11 @@ impl DysymtabCommand {
                     nom::number::complete::le_u32::<_, nom::error::Error<_>>(cursor).unwrap();
                 cursor = remaining;
                 if index & Self::INDIRECT_SYMBOL_LOCAL > 0 {
-                    println!("Local symbol");
-                    // TODO: Do something with this
+                    // Symbol was strip(1)'d
                     continue;
                 }
                 if index & Self::INDIRECT_SYMBOL_ABS > 0 {
-                    println!("Absolute symbol");
-                    // TODO: Do something with this
+                    // Symbol was strip(1)'d
                     continue;
                 }
                 indices.push(index);
