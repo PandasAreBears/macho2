@@ -11,6 +11,7 @@ A better parser for the MachO file format.
 - [x] Parse code signature, chained fixups, dysymtab, and more.
 - [x] Tool for dumping MachO header/ load commands
 - [x] Tool for extracting thin MachO from fat MachO
+- [x] Parse ObjC runtime data
 
 ## TODO
 
