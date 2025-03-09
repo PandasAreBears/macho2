@@ -228,7 +228,7 @@ impl ObjCCategory {
             ImageValue::Bind(b) => ObjCClassPtr::External(b),
             ImageValue::Value(v) | ImageValue::Rebase(v) => {
                 let off = macho.vm_addr_to_offset(v)?;
-                ObjCClassPtr::Class(Arc::new(ObjCClass::parse(macho, off)?))
+                ObjCClassPtr::Class(Arc::new(ObjCClass::parse(macho, off, None, None)?))
             }
         };
 
@@ -684,7 +684,9 @@ impl ObjCProtocol {
         let isa = macho.read_offset_u64(offset)?.unwrap()?;
         let isa = if isa != 0 {
             let off = macho.vm_addr_to_offset(isa)?;
-            Some(ObjCClassPtr::Class(Arc::new(ObjCClass::parse(macho, off)?)))
+            Some(ObjCClassPtr::Class(Arc::new(ObjCClass::parse(
+                macho, off, None, None,
+            )?)))
         } else {
             None
         };
@@ -859,29 +861,29 @@ impl ObjCClassRO {
         let name_off = macho.vm_addr_to_offset(name).unwrap();
         let name_str = macho.read_null_terminated_string(name_off)?;
 
-        let base_methods_off = macho.vm_addr_to_offset(base_methods)?;
-        let base_methods = if base_methods_off != 0 {
+        let base_methods = if base_methods != 0 {
+            let base_methods_off = macho.vm_addr_to_offset(base_methods)?;
             Some(ObjCMethodList::parse(macho, base_methods_off))
         } else {
             None
         };
 
-        let base_protocols_off = macho.vm_addr_to_offset(base_protocols)?;
-        let base_protocols = if base_protocols_off != 0 {
+        let base_protocols = if base_protocols != 0 {
+            let base_protocols_off = macho.vm_addr_to_offset(base_protocols)?;
             Some(ObjCProtocolList::parse(macho, base_protocols_off)?)
         } else {
             None
         };
 
-        let ivars_offset = macho.vm_addr_to_offset(ivars)?;
-        let ivars = if ivars_offset != 0 {
+        let ivars = if ivars != 0 {
+            let ivars_offset = macho.vm_addr_to_offset(ivars)?;
             Some(ObjCIVarList::parse(macho, ivars_offset))
         } else {
             None
         };
 
-        let base_properties_off = macho.vm_addr_to_offset(base_properties)?;
-        let base_properties = if base_properties_off != 0 {
+        let base_properties = if base_properties != 0 {
+            let base_properties_off = macho.vm_addr_to_offset(base_properties)?;
             Some(ObjCPropertyList::parse(macho, base_properties_off))
         } else {
             None
@@ -914,6 +916,7 @@ impl ObjCClassRO {
 pub enum ObjCClassPtr {
     Class(Arc<ObjCClass>),
     External(String),
+    Recursive,
 }
 
 #[derive(Debug, Clone)]
@@ -1030,13 +1033,18 @@ impl ObjCClass {
         class_offs
             .iter()
             .filter_map(|offset| {
-                let cls = ObjCClass::parse(macho, *offset);
+                let cls = ObjCClass::parse(macho, *offset, None, None);
                 cls.ok()
             })
             .collect()
     }
 
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCClass> {
+    pub fn parse<T: Read + Seek>(
+        macho: &mut MachO<T>,
+        offset: u64,
+        prev_isa: Option<u64>,
+        prev_superclass: Option<u64>,
+    ) -> MachOResult<ObjCClass> {
         lazy_static! {
             static ref OBJC_CLASS_CACHE: Mutex<HashMap<u64, Arc<ObjCClass>>> =
                 Mutex::new(HashMap::new());
@@ -1056,32 +1064,54 @@ impl ObjCClass {
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut cls_data).unwrap();
 
+        // If the previous isa is equal to the current isa or superclass then we will get
+        // stuck in a loop.
+        let isa_imgval = macho.read_offset_u64(offset)?;
+        let superclass_imgval = macho.read_offset_u64(offset + 8)?;
+
         // The ISA field will eventually be an NSObject pointer which is external to the
         // current binary.
-        let isa = match macho.read_offset_u64(offset)? {
+        let isa = match isa_imgval.clone() {
             ImageValue::Value(v) | ImageValue::Rebase(v) => {
-                let isa_off = macho.vm_addr_to_offset(v)?;
-                if isa_off != 0 {
-                    Some(ObjCClassPtr::Class(Arc::new(ObjCClass::parse(
-                        macho, isa_off,
-                    )?)))
+                if (prev_isa.is_some() && prev_isa.unwrap() == v)
+                    || (prev_superclass.is_some() && prev_superclass.unwrap() == v)
+                {
+                    Some(ObjCClassPtr::Recursive)
                 } else {
-                    None
+                    if v != 0 {
+                        let isa_off = macho.vm_addr_to_offset(v)?;
+                        Some(ObjCClassPtr::Class(Arc::new(ObjCClass::parse(
+                            macho,
+                            isa_off,
+                            Some(v),
+                            superclass_imgval.unwrap().ok(),
+                        )?)))
+                    } else {
+                        None
+                    }
                 }
             }
             ImageValue::Bind(b) => Some(ObjCClassPtr::External(b)),
         };
 
-        let superclass = match macho.read_offset_u64(offset + 8)? {
+        let superclass = match superclass_imgval {
             ImageValue::Value(v) | ImageValue::Rebase(v) => {
-                let superclass_off = macho.vm_addr_to_offset(v)?;
-                if superclass_off != 0 {
-                    Some(ObjCClassPtr::Class(Arc::new(ObjCClass::parse(
-                        macho,
-                        superclass_off,
-                    )?)))
+                if (prev_superclass.is_some() && prev_superclass.unwrap() == v)
+                    || (prev_isa.is_some() && prev_isa.unwrap() == v)
+                {
+                    Some(ObjCClassPtr::Recursive)
                 } else {
-                    None
+                    if v != 0 {
+                        let superclass_off = macho.vm_addr_to_offset(v)?;
+                        Some(ObjCClassPtr::Class(Arc::new(ObjCClass::parse(
+                            macho,
+                            superclass_off,
+                            isa_imgval.unwrap().ok(),
+                            Some(v),
+                        )?)))
+                    } else {
+                        None
+                    }
                 }
             }
             ImageValue::Bind(b) => Some(ObjCClassPtr::External(b)),
