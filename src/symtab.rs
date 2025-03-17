@@ -9,7 +9,7 @@ use num_derive::FromPrimitive;
 use crate::{
     header::MachHeader,
     helpers::string_upto_null_terminator,
-    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase},
+    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved},
     macho::{Raw, Resolved},
 };
 
@@ -260,11 +260,8 @@ impl<A> DysymtabCommand<A> {
     pub const INDIRECT_SYMBOL_ABS: u32 = 0x40000000;
 }
 
-impl DysymtabCommand<Raw> {
-    pub fn parse<'a, T: Seek + Read>(
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-    ) -> IResult<&'a [u8], Self> {
+impl<'a> ParseRaw<'a> for DysymtabCommand<Raw> {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
         let (
             cursor,
             (
@@ -325,8 +322,8 @@ impl DysymtabCommand<Raw> {
     }
 }
 
-impl DysymtabCommand<Resolved> {
-    pub fn parse<'a, T: Seek + Read>(
+impl<'a, T: Seek + Read> ParseResolved<'a, T> for DysymtabCommand<Resolved> {
+    fn parse(
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],

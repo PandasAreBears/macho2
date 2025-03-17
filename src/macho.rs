@@ -119,7 +119,11 @@ impl<T: Seek + Read> MachO<T, Resolved> {
             .iter()
             .filter_map(|lc| match lc {
                 LoadCommand::DyldChainedFixups(cmd) => {
-                    cmd.fixups.iter().find(|fixup| fixup.offset == offset)
+                    if let Some(fixups) = &cmd.fixups {
+                        fixups.iter().find(|fixup| fixup.offset == offset)
+                    } else {
+                        None
+                    }
                 }
                 _ => None,
             })

@@ -83,17 +83,17 @@ fn print_nm<T: Read + Seek>(macho: &MachO<T, Resolved>) {
         })
         .for_each(|lc| match lc {
             LoadCommand::DyldExportsTrie(export) => {
-                export.exports.iter().for_each(|f| {
+                export.exports.as_ref().unwrap().iter().for_each(|f| {
                     println!("{}", f.name);
                 });
             }
             LoadCommand::DyldInfo(info) => {
-                info.exports.iter().for_each(|f| {
+                info.exports.as_ref().unwrap().iter().for_each(|f| {
                     println!("{}", f.name);
                 });
             }
             LoadCommand::DyldInfoOnly(info) => {
-                info.exports.iter().for_each(|f| {
+                info.exports.as_ref().unwrap().iter().for_each(|f| {
                     println!("{}", f.name);
                 });
             }

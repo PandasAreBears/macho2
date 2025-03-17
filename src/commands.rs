@@ -1,5 +1,9 @@
-use std::io::{Read, Seek, SeekFrom};
+use std::{
+    io::{Read, Seek, SeekFrom},
+    marker::PhantomData,
+};
 
+use nom::number::complete::le_u32;
 use nom_derive::{Nom, Parse};
 use strum_macros::{Display, EnumString};
 use uuid::Uuid;
@@ -7,9 +11,9 @@ use uuid::Uuid;
 use crate::{
     header::MachHeader,
     helpers::{read_uleb_many, string_upto_null_terminator, version_string},
-    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase},
+    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved},
     machine::{ThreadState, ThreadStateBase},
-    macho::Resolved,
+    macho::{Raw, Resolved},
 };
 
 #[repr(u32)]
@@ -299,8 +303,8 @@ impl LinkeditDataCommand {
     pub fn parse<'a>(bytes: &'a [u8], base: LoadCommandBase) -> nom::IResult<&'a [u8], Self> {
         let end = &bytes[base.cmdsize as usize..];
         let (cursor, _) = LoadCommandBase::skip(bytes)?;
-        let (cursor, dataoff) = nom::number::complete::le_u32(cursor)?;
-        let (_, datasize) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, dataoff) = le_u32(cursor)?;
+        let (_, datasize) = le_u32(cursor)?;
 
         Ok((
             end,
@@ -321,16 +325,35 @@ pub struct FunctionOffset {
 }
 
 #[derive(Debug)]
-pub struct FunctionStartsCommand {
+pub struct FunctionStartsCommand<A> {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
     pub dataoff: u32,
     pub datasize: u32,
-    pub funcs: Vec<FunctionOffset>,
+    pub funcs: Option<Vec<FunctionOffset>>,
+
+    phantom: PhantomData<A>,
 }
 
-impl FunctionStartsCommand {
-    pub fn parse<'a, T: Seek + Read>(
+impl<'a> ParseRaw<'a> for FunctionStartsCommand<Raw> {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
+        let (bytes, linkeditcmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+        Ok((
+            bytes,
+            FunctionStartsCommand {
+                cmd: linkeditcmd.cmd,
+                cmdsize: linkeditcmd.cmdsize,
+                dataoff: linkeditcmd.dataoff,
+                datasize: linkeditcmd.datasize,
+                funcs: None,
+                phantom: PhantomData,
+            },
+        ))
+    }
+}
+
+impl<'a, T: Read + Seek> ParseResolved<'a, T> for FunctionStartsCommand<Resolved> {
+    fn parse(
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
@@ -365,7 +388,8 @@ impl FunctionStartsCommand {
                 cmdsize: linkeditcmd.cmdsize,
                 dataoff: linkeditcmd.dataoff,
                 datasize: linkeditcmd.datasize,
-                funcs: results,
+                funcs: Some(results),
+                phantom: PhantomData,
             },
         ))
     }

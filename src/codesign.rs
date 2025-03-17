@@ -1,15 +1,18 @@
-use std::io::{Read, Seek, SeekFrom};
+use std::{
+    io::{Read, Seek, SeekFrom},
+    marker::PhantomData,
+};
 
 use bitflags;
-use nom::{self, Parser};
+use nom::{self, IResult, Parser};
 use num_derive::FromPrimitive;
 
 use crate::{
     commands::LinkeditDataCommand,
     header::MachHeader,
     helpers::string_upto_null_terminator,
-    load_command::{LoadCommand, LoadCommandBase},
-    macho::Resolved,
+    load_command::{LoadCommand, LoadCommandBase, ParseRaw, ParseResolved},
+    macho::{Raw, Resolved},
 };
 
 bitflags::bitflags! {
@@ -503,13 +506,29 @@ pub enum CodeSignBlob {
 }
 
 #[derive(Debug)]
-pub struct CodeSignCommand {
+pub struct CodeSignCommand<A> {
     pub cmd: LinkeditDataCommand,
-    pub blobs: Vec<CodeSignBlob>,
+    pub blobs: Option<Vec<CodeSignBlob>>,
+    phantom: PhantomData<A>,
 }
 
-impl CodeSignCommand {
-    pub fn parse<'a, T: Seek + Read>(
+impl<'a> ParseRaw<'a> for CodeSignCommand<Raw> {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+
+        Ok((
+            cursor,
+            CodeSignCommand {
+                cmd,
+                blobs: None,
+                phantom: PhantomData,
+            },
+        ))
+    }
+}
+
+impl<'a, T: Seek + Read> ParseResolved<'a, T> for CodeSignCommand<Resolved> {
+    fn parse(
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
@@ -552,6 +571,13 @@ impl CodeSignCommand {
             })
             .collect();
 
-        Ok((bytes, CodeSignCommand { cmd, blobs }))
+        Ok((
+            bytes,
+            CodeSignCommand {
+                cmd,
+                blobs: Some(blobs),
+                phantom: PhantomData,
+            },
+        ))
     }
 }

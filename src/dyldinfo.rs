@@ -1,10 +1,11 @@
 use bitfield::bitfield;
 use std::{
     io::{Read, Seek, SeekFrom},
+    marker::PhantomData,
     vec,
 };
 
-use nom::{error::Error, Parser};
+use nom::{error::Error, number::complete::le_u32, sequence, IResult, Parser};
 use num_derive::FromPrimitive;
 
 use crate::{
@@ -12,8 +13,8 @@ use crate::{
     fixups::DyldFixup,
     header::MachHeader,
     helpers::{read_sleb, read_uleb, string_upto_null_terminator},
-    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase},
-    macho::Resolved,
+    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved},
+    macho::{Raw, Resolved},
 };
 
 #[derive(Debug, FromPrimitive, Clone, Copy)]
@@ -695,22 +696,41 @@ impl DyldPointerFormat {
 }
 
 #[derive(Debug)]
-pub struct DyldChainedFixupCommand {
+pub struct DyldChainedFixupCommand<A> {
     pub cmd: LinkeditDataCommand,
-    pub header: DyldChainedFixupsHeader,
-    pub imports: Vec<DyldChainedImport>,
-    pub starts: DyldStartsInImage,
-    pub fixups: Vec<DyldFixup>,
+    pub header: Option<DyldChainedFixupsHeader>,
+    pub imports: Option<Vec<DyldChainedImport>>,
+    pub starts: Option<DyldStartsInImage>,
+    pub fixups: Option<Vec<DyldFixup>>,
+
+    phantom: PhantomData<A>,
 }
 
-impl DyldChainedFixupCommand {
-    pub fn parse<'a, T: Seek + Read>(
+impl<'a> ParseRaw<'a> for DyldChainedFixupCommand<Raw> {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (_, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+        Ok((
+            ldcmd,
+            DyldChainedFixupCommand {
+                cmd,
+                header: None,
+                imports: None,
+                starts: None,
+                fixups: None,
+                phantom: PhantomData,
+            },
+        ))
+    }
+}
+
+impl<'a, T: Read + Seek> ParseResolved<'a, T> for DyldChainedFixupCommand<Resolved> {
+    fn parse(
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
         _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], DyldChainedFixupCommand> {
+    ) -> nom::IResult<&'a [u8], Self> {
         let (_, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
         let mut blob = vec![0; cmd.datasize as usize];
         buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
@@ -738,17 +758,18 @@ impl DyldChainedFixupCommand {
             ldcmd,
             DyldChainedFixupCommand {
                 cmd,
-                header,
-                imports,
-                starts,
-                fixups,
+                header: Some(header),
+                imports: Some(imports),
+                starts: Some(starts),
+                fixups: Some(fixups),
+                phantom: PhantomData,
             },
         ))
     }
 }
 
 #[derive(Debug)]
-pub struct DyldInfoCommand {
+pub struct DyldInfoCommand<A> {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
     pub rebase_off: u32,
@@ -762,57 +783,113 @@ pub struct DyldInfoCommand {
     pub export_off: u32,
     pub export_size: u32,
 
-    pub rebase_instructions: Vec<RebaseInstruction>,
-    pub bind_instructions: Vec<BindInstruction>,
-    pub weak_instructions: Vec<BindInstruction>,
-    pub lazy_instructions: Vec<BindInstruction>,
-    pub exports: Vec<DyldExport>,
+    pub rebase_instructions: Option<Vec<RebaseInstruction>>,
+    pub bind_instructions: Option<Vec<BindInstruction>>,
+    pub weak_instructions: Option<Vec<BindInstruction>>,
+    pub lazy_instructions: Option<Vec<BindInstruction>>,
+    pub exports: Option<Vec<DyldExport>>,
+
+    phantom: PhantomData<A>,
 }
 
-impl DyldInfoCommand {
-    pub fn parse<'a, T: Seek + Read>(
+impl<'a> ParseRaw<'a> for DyldInfoCommand<Raw> {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+        let (
+            cursor,
+            (
+                rebase_off,
+                rebase_size,
+                bind_off,
+                bind_size,
+                weak_bind_off,
+                weak_bind_size,
+                lazy_bind_off,
+                lazy_bind_size,
+                export_off,
+                export_size,
+            ),
+        ) = sequence::tuple((
+            le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
+        ))(cursor)?;
+
+        Ok((
+            cursor,
+            DyldInfoCommand {
+                cmd: base.cmd,
+                cmdsize: base.cmdsize,
+                rebase_off,
+                rebase_size,
+                bind_off,
+                bind_size,
+                weak_bind_off,
+                weak_bind_size,
+                lazy_bind_off,
+                lazy_bind_size,
+                export_off,
+                export_size,
+                rebase_instructions: None,
+                bind_instructions: None,
+                weak_instructions: None,
+                lazy_instructions: None,
+                exports: None,
+                phantom: PhantomData,
+            },
+        ))
+    }
+}
+
+impl<'a, T: Read + Seek> ParseResolved<'a, T> for DyldInfoCommand<Resolved> {
+    fn parse(
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
         _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+    ) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, rebase_off) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, rebase_size) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, bind_off) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, bind_size) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, weak_bind_off) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, weak_bind_size) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, lazy_bind_off) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, lazy_bind_size) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, export_off) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, export_size) = nom::number::complete::le_u32(cursor)?;
+        let (
+            cursor,
+            (
+                rebase_off,
+                rebase_size,
+                bind_off,
+                bind_size,
+                weak_bind_off,
+                weak_bind_size,
+                lazy_bind_off,
+                lazy_bind_size,
+                export_off,
+                export_size,
+            ),
+        ) = sequence::tuple((
+            le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
+        ))(cursor)?;
 
         let mut rebase_blob = vec![0u8; rebase_size as usize];
         buf.seek(SeekFrom::Start(rebase_off as u64)).unwrap();
         buf.read_exact(&mut rebase_blob).unwrap();
-        let (_, rebase_instructions) = RebaseInstruction::parse(&rebase_blob).unwrap();
+        let rebase_instructions = Some(RebaseInstruction::parse(&rebase_blob).unwrap().1);
 
         let mut bind_blob = vec![0u8; bind_size as usize];
         buf.seek(SeekFrom::Start(bind_off as u64)).unwrap();
         buf.read_exact(&mut bind_blob).unwrap();
-        let (_, bind_instructions) = BindInstruction::parse(&bind_blob).unwrap();
+        let bind_instructions = Some(BindInstruction::parse(&bind_blob).unwrap().1);
 
         let mut weak_bind_blob = vec![0u8; weak_bind_size as usize];
         buf.seek(SeekFrom::Start(weak_bind_off as u64)).unwrap();
         buf.read_exact(&mut weak_bind_blob).unwrap();
-        let (_, weak_instructions) = BindInstruction::parse(&weak_bind_blob).unwrap();
+        let weak_instructions = Some(BindInstruction::parse(&weak_bind_blob).unwrap().1);
 
         let mut lazy_bind_blob = vec![0u8; lazy_bind_size as usize];
         buf.seek(SeekFrom::Start(lazy_bind_off as u64)).unwrap();
         buf.read_exact(&mut lazy_bind_blob).unwrap();
-        let (_, lazy_instructions) = BindInstruction::parse(&lazy_bind_blob).unwrap();
+        let lazy_instructions = Some(BindInstruction::parse(&lazy_bind_blob).unwrap().1);
 
         let mut export_blob = vec![0u8; export_size as usize];
         buf.seek(SeekFrom::Start(export_off as u64)).unwrap();
         buf.read_exact(&mut export_blob).unwrap();
-        let (_, exports) = DyldExport::parse(&export_blob).unwrap();
+        let exports = Some(DyldExport::parse(&export_blob).unwrap().1);
 
         Ok((
             cursor,
@@ -834,19 +911,36 @@ impl DyldInfoCommand {
                 weak_instructions,
                 lazy_instructions,
                 exports,
+                phantom: PhantomData,
             },
         ))
     }
 }
 
 #[derive(Debug)]
-pub struct DyldExportsTrie {
+pub struct DyldExportsTrie<A> {
     pub cmd: LinkeditDataCommand,
-    pub exports: Vec<DyldExport>,
+    pub exports: Option<Vec<DyldExport>>,
+
+    phantom: PhantomData<A>,
 }
 
-impl DyldExportsTrie {
-    pub fn parse<'a, T: Seek + Read>(
+impl<'a> ParseRaw<'a> for DyldExportsTrie<Raw> {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+        Ok((
+            bytes,
+            DyldExportsTrie {
+                cmd,
+                exports: None,
+                phantom: PhantomData,
+            },
+        ))
+    }
+}
+
+impl<'a, T: Seek + Read> ParseResolved<'a, T> for DyldExportsTrie<Resolved> {
+    fn parse(
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
@@ -858,6 +952,13 @@ impl DyldExportsTrie {
         buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
         buf.read_exact(&mut blob).unwrap();
         let (_, exports) = DyldExport::parse(&blob).unwrap();
-        Ok((bytes, DyldExportsTrie { cmd, exports }))
+        Ok((
+            bytes,
+            DyldExportsTrie {
+                cmd,
+                exports: Some(exports),
+                phantom: PhantomData,
+            },
+        ))
     }
 }

@@ -196,7 +196,7 @@ fn print_load_command(lc: &LoadCommand<Resolved>) {
         LoadCommand::CodeSignature(code_sign_command) => {
             println!(
                 "LC_CODE_SIGNATURE  nblobs={}",
-                code_sign_command.blobs.len()
+                code_sign_command.blobs.as_ref().unwrap().len()
             )
         }
         LoadCommand::SegmentSplitInfo(_) => println!("LC_SEGMENT_SPLIT_INFO  "),
@@ -218,19 +218,32 @@ fn print_load_command(lc: &LoadCommand<Resolved>) {
         ),
         LoadCommand::DyldInfo(dyld_info_command) => println!(
             "LC_DYLD_INFO  nrebase={} nbind={} nweakbind={} nlazybind={} nexport={}",
-            dyld_info_command.rebase_instructions.len(),
-            dyld_info_command.bind_instructions.len(),
-            dyld_info_command.weak_instructions.len(),
-            dyld_info_command.lazy_instructions.len(),
-            dyld_info_command.exports.len()
+            dyld_info_command
+                .rebase_instructions
+                .as_ref()
+                .unwrap()
+                .len(),
+            dyld_info_command.bind_instructions.as_ref().unwrap().len(),
+            dyld_info_command.weak_instructions.as_ref().unwrap().len(),
+            dyld_info_command
+                .lazy_instructions
+                .as_ref()
+                .as_ref()
+                .unwrap()
+                .len(),
+            dyld_info_command.exports.as_ref().unwrap().len()
         ),
         LoadCommand::DyldInfoOnly(dyld_info_command) => println!(
             "LC_DYLD_INFO_ONLY  nrebase={} nbind={} nweakbind={} nlazybind={} nexport={}",
-            dyld_info_command.rebase_instructions.len(),
-            dyld_info_command.bind_instructions.len(),
-            dyld_info_command.weak_instructions.len(),
-            dyld_info_command.lazy_instructions.len(),
-            dyld_info_command.exports.len()
+            dyld_info_command
+                .rebase_instructions
+                .as_ref()
+                .unwrap()
+                .len(),
+            dyld_info_command.bind_instructions.as_ref().unwrap().len(),
+            dyld_info_command.weak_instructions.as_ref().unwrap().len(),
+            dyld_info_command.lazy_instructions.as_ref().unwrap().len(),
+            dyld_info_command.exports.as_ref().unwrap().len()
         ),
         LoadCommand::LoadUpwardDylib(dylib_command) => {
             println!(
@@ -247,7 +260,7 @@ fn print_load_command(lc: &LoadCommand<Resolved>) {
         LoadCommand::FunctionStarts(function_starts_command) => {
             println!(
                 "LC_FUNCTION_STARTS  nfuncs={}",
-                function_starts_command.funcs.len()
+                function_starts_command.funcs.as_ref().unwrap().len()
             )
         }
         LoadCommand::DyldEnvironment(dylinker_command) => {
@@ -293,13 +306,18 @@ fn print_load_command(lc: &LoadCommand<Resolved>) {
         LoadCommand::DyldExportsTrie(dyld_exports_trie) => {
             println!(
                 "LC_DYLD_EXPORTS_TRIE  nexports={}",
-                dyld_exports_trie.exports.len()
+                dyld_exports_trie.exports.as_ref().unwrap().len()
             )
         }
         LoadCommand::DyldChainedFixups(dyld_chained_fixup_command) => println!(
             "LC_DYLD_CHAINED_FIXUPS  nimports={} nstarts={}",
-            dyld_chained_fixup_command.imports.len(),
-            dyld_chained_fixup_command.starts.seg_starts.len()
+            dyld_chained_fixup_command.imports.as_ref().unwrap().len(),
+            dyld_chained_fixup_command
+                .starts
+                .as_ref()
+                .unwrap()
+                .seg_starts
+                .len()
         ),
         LoadCommand::FilesetEntry(fileset_entry_command) => println!(
             "LC_FILESET_ENTRY  {} addr=0x{:08x} off=0x{:08x}",
