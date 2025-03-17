@@ -12,8 +12,8 @@ use crate::{
     fixups::DyldFixup,
     header::MachHeader,
     helpers::{read_sleb, read_uleb, string_upto_null_terminator},
+    load_command::LoadCommandResolved,
     load_command::{LCLoadCommand, LoadCommandBase},
-    macho::LoadCommandResolved,
 };
 
 #[derive(Debug, FromPrimitive, Clone, Copy)]

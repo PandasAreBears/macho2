@@ -7,9 +7,9 @@ use uuid::Uuid;
 use crate::{
     header::MachHeader,
     helpers::{read_uleb_many, string_upto_null_terminator, version_string},
+    load_command::LoadCommandResolved,
     load_command::{LCLoadCommand, LoadCommandBase},
     machine::{ThreadState, ThreadStateBase},
-    macho::LoadCommandResolved,
 };
 
 #[repr(u32)]

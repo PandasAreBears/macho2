@@ -5,8 +5,8 @@ use num_derive::FromPrimitive;
 use crate::{
     header::MachHeader,
     helpers::string_upto_null_terminator,
+    load_command::LoadCommandResolved,
     load_command::{LCLoadCommand, LoadCommandBase},
-    macho::LoadCommandResolved,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]

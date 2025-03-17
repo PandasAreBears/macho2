@@ -6,7 +6,7 @@ use num_derive::FromPrimitive;
 
 use crate::{
     commands::LinkeditDataCommand, header::MachHeader, helpers::string_upto_null_terminator,
-    load_command::LoadCommandBase, macho::LoadCommandResolved,
+    load_command::LoadCommandBase, load_command::LoadCommandResolved,
 };
 
 bitflags::bitflags! {

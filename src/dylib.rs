@@ -3,8 +3,8 @@ use std::io::{Read, Seek};
 use crate::{
     header::MachHeader,
     helpers::{string_upto_null_terminator, version_string},
+    load_command::LoadCommandResolved,
     load_command::{LCLoadCommand, LoadCommandBase},
-    macho::LoadCommandResolved,
 };
 
 bitflags::bitflags! {

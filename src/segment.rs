@@ -5,8 +5,7 @@ use num_derive::FromPrimitive;
 use crate::{
     header::MachHeader,
     helpers::string_upto_null_terminator,
-    load_command::{LCLoadCommand, LoadCommandBase},
-    macho::LoadCommandResolved,
+    load_command::{LCLoadCommand, LoadCommandBase, LoadCommandResolved},
 };
 
 bitflags::bitflags! {
