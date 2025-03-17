@@ -37,8 +37,8 @@ fn main() -> MachOResult<()> {
         return Ok(());
     }
 
-    if FatMachO::is_fat_magic(&mut file)? {
-        let mut fat_macho = FatMachO::parse(&mut file).unwrap();
+    if FatMachO::<_, Resolved>::is_fat_magic(&mut file)? {
+        let mut fat_macho = FatMachO::<_, Resolved>::parse(&mut file).unwrap();
         println!("This is a fat macho file. Please select an architecture:");
         for (i, arch) in fat_macho.archs.iter().enumerate() {
             println!("{}: {:?} {:?}", i, arch.cputype(), arch.cpusubtype());
@@ -57,7 +57,7 @@ fn main() -> MachOResult<()> {
                 ),
             }
         };
-        let macho = fat_macho.macho(fat_macho.archs[index].cputype())?;
+        let macho = fat_macho.macho::<Resolved>(fat_macho.archs[index].cputype())?;
         print_nm(&macho);
     } else if MachO::<_, Resolved>::is_macho_magic(&mut file)? {
         let macho = MachO::<_, Resolved>::parse(file).unwrap();
@@ -73,7 +73,7 @@ fn main() -> MachOResult<()> {
 
 fn print_nm<T: Read + Seek>(macho: &MachO<T, Resolved>) {
     macho
-        .load_commands()
+        .load_commands
         .iter()
         .filter(|lc| match lc {
             LoadCommand::DyldExportsTrie(_)

@@ -38,7 +38,7 @@ impl ObjCImageInfo {
 
     pub fn parse<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Option<ObjCImageInfo> {
         let objc_image_info = macho
-            .load_commands()
+            .load_commands
             .iter()
             .filter_map(|lc| match lc {
                 LoadCommand::Segment64(seg) => Some(seg),
@@ -169,7 +169,7 @@ pub struct ObjCCategory {
 impl ObjCCategory {
     pub fn parse_catlist<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Vec<ObjCCategory> {
         let catlist = macho
-            .load_commands()
+            .load_commands
             .iter()
             .filter_map(|lc| match lc {
                 LoadCommand::Segment64(seg) => Some(seg),
@@ -604,7 +604,7 @@ pub struct ObjCProtocol {
 impl ObjCProtocol {
     pub fn parse_protorefs<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Vec<String> {
         let protorefs = macho
-            .load_commands()
+            .load_commands
             .iter()
             .filter_map(|lc| match lc {
                 LoadCommand::Segment64(seg) => Some(seg),
@@ -635,7 +635,7 @@ impl ObjCProtocol {
 
     pub fn parse_protolist<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Vec<ObjCProtocol> {
         let protolist = macho
-            .load_commands()
+            .load_commands
             .iter()
             .filter_map(|lc| match lc {
                 LoadCommand::Segment64(seg) => Some(seg),
@@ -958,7 +958,7 @@ impl ObjCClass {
     pub const CLASS_RO_BIT_MASK: u64 = 0x00007ffffffffff8;
     pub fn parse_classrefs<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Vec<String> {
         let classrefs = macho
-            .load_commands()
+            .load_commands
             .iter()
             .filter_map(|lc| match lc {
                 LoadCommand::Segment64(seg) => Some(seg),
@@ -990,7 +990,7 @@ impl ObjCClass {
 
     pub fn parse_superrefs<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Vec<String> {
         let superrefs = macho
-            .load_commands()
+            .load_commands
             .iter()
             .filter_map(|lc| match lc {
                 LoadCommand::Segment64(seg) => Some(seg),
@@ -1020,7 +1020,7 @@ impl ObjCClass {
     }
     pub fn parse_classlist<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Vec<ObjCClass> {
         let classlist = macho
-            .load_commands()
+            .load_commands
             .iter()
             .filter_map(|lc| match lc {
                 LoadCommand::Segment64(seg) => Some(seg),
@@ -1210,7 +1210,7 @@ impl ObjCSelRef {
     }
     pub fn parse_selrefs<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Vec<ObjCSelRef> {
         let selrefs = macho
-            .load_commands()
+            .load_commands
             .iter()
             .filter_map(|lc| match lc {
                 LoadCommand::Segment64(seg) => Some(seg),

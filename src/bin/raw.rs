@@ -1,13 +1,10 @@
+use macho2::macho::{FatMachO, MachO, MachOErr, MachOResult, Raw};
 use std::{
     env,
     fs::File,
     io::{stdout, Read, Seek, Write},
 };
 
-use macho2::{
-    macho::{FatMachO, MachO, MachOErr, MachOResult, Resolved},
-    objc::ObjCInfo,
-};
 fn main() -> MachOResult<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -24,8 +21,8 @@ fn main() -> MachOResult<()> {
         }
     };
 
-    if FatMachO::<_, Resolved>::is_fat_magic(&mut file)? {
-        let mut fat_macho = FatMachO::<_, Resolved>::parse(&mut file).unwrap();
+    if FatMachO::<_, Raw>::is_fat_magic(&mut file)? {
+        let mut fat_macho = FatMachO::<_, Raw>::parse(&mut file).unwrap();
         println!("This is a fat macho file. Please select an architecture:");
         for (i, arch) in fat_macho.archs.iter().enumerate() {
             println!("{}: {:?} {:?}", i, arch.cputype(), arch.cpusubtype());
@@ -44,16 +41,16 @@ fn main() -> MachOResult<()> {
                 ),
             }
         };
-        let mut macho = fat_macho
-            .macho::<Resolved>(fat_macho.archs[index].cputype())
+        let macho = fat_macho
+            .macho::<Raw>(fat_macho.archs[index].cputype())
             .map_err(|e| {
                 panic!("Failed to extract Mach-O: {}", e);
             })
             .unwrap();
-        print_objc(&mut macho);
-    } else if MachO::<_, Resolved>::is_macho_magic(&mut file)? {
-        let mut macho = MachO::<_, Resolved>::parse(file).unwrap();
-        print_objc(&mut macho);
+        print_raw(&macho);
+    } else if MachO::<_, Raw>::is_macho_magic(&mut file)? {
+        let macho = MachO::<_, Raw>::parse(file).unwrap();
+        print_raw(&macho);
     } else {
         return Err(MachOErr {
             detail: "Invalid Mach-O file".to_string(),
@@ -63,13 +60,11 @@ fn main() -> MachOResult<()> {
     Ok(())
 }
 
-fn print_objc<T: Read + Seek>(macho: &mut MachO<T, Resolved>) {
-    let objc_info = ObjCInfo::parse(macho).unwrap();
-    println!("nselrefs={}", objc_info.selrefs.len());
-    println!("nclasses={}", objc_info.classes.len());
-    println!("nprotos={}", objc_info.protocols.len());
-    println!("ncats={}", objc_info.categories.len());
-    println!("nclassrefs={}", objc_info.class_refs.len());
-    println!("nprotorefs={}", objc_info.protocol_refs.len());
-    println!("nsuperrefs={}", objc_info.super_refs.len());
+fn print_raw<T: Read + Seek>(macho: &MachO<T, Raw>) {
+    println!("Header:");
+    println!("{:#?}", macho.header);
+    println!("Load Commands:");
+    for lc in &macho.load_commands {
+        println!("{:#?}", lc);
+    }
 }

@@ -26,8 +26,8 @@ fn main() -> MachOResult<()> {
         }
     };
 
-    if FatMachO::is_fat_magic(&mut file)? {
-        let mut fat_macho = FatMachO::parse(&mut file).unwrap();
+    if FatMachO::<_, Resolved>::is_fat_magic(&mut file)? {
+        let mut fat_macho = FatMachO::<_, Resolved>::parse(&mut file).unwrap();
         println!("This is a fat macho file. Please select an architecture:");
         for (i, arch) in fat_macho.archs.iter().enumerate() {
             println!("{}: {:?} {:?}", i, arch.cputype(), arch.cpusubtype());
@@ -47,17 +47,17 @@ fn main() -> MachOResult<()> {
             }
         };
         let macho = fat_macho
-            .macho(fat_macho.archs[index].cputype())
+            .macho::<Resolved>(fat_macho.archs[index].cputype())
             .map_err(|e| {
                 panic!("Failed to extract Mach-O: {}", e);
             })
             .unwrap();
         print_header(macho.header);
-        print_load_commands(macho.load_commands());
+        print_load_commands(&macho.load_commands);
     } else if MachO::<_, Resolved>::is_macho_magic(&mut file)? {
         let macho = MachO::<_, Resolved>::parse(file).unwrap();
         print_header(macho.header);
-        print_load_commands(macho.load_commands());
+        print_load_commands(&macho.load_commands);
     } else {
         return Err(MachOErr {
             detail: "Invalid Mach-O file".to_string(),

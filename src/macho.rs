@@ -7,13 +7,15 @@ use crate::file_subset::FileSubset;
 use crate::fixups::DyldFixup;
 use crate::header::{MHMagic, MachHeader};
 
-use crate::load_command::{LoadCommand, LoadCommandBase};
+use crate::load_command::LoadCommand;
 use crate::machine;
 use crate::segment::SegmentCommand64;
 use std::fmt;
 
 /// ZSTs to define the load command parsing behaviour.
+#[derive(Debug)]
 pub struct Raw;
+#[derive(Debug)]
 pub struct Resolved;
 
 #[derive(Debug)]
@@ -54,8 +56,7 @@ impl ImageValue {
 pub struct MachO<T: Seek + Read, A> {
     pub header: MachHeader,
     pub buf: T,
-    resolved: Option<Vec<LoadCommand<A>>>,
-    raw: Option<Vec<LoadCommandBase>>,
+    pub load_commands: Vec<LoadCommand<A>>,
     segs: Vec<SegmentCommand64>,
     phantom: PhantomData<A>,
 }
@@ -63,27 +64,7 @@ pub struct MachO<T: Seek + Read, A> {
 impl<T: Seek + Read> MachO<T, Raw> {
     pub fn parse(mut buf: T) -> MachOResult<Self> {
         let header = MachHeader::parse(&mut buf)?;
-        // let load_commands = LoadCommandBase::parse_all(&mut buf, header)?;
-
-        Ok(Self {
-            header,
-            resolved: None,
-            raw: Some(vec![]), // TODO
-            buf,
-            segs: Vec::new(), // TODO
-            phantom: PhantomData,
-        })
-    }
-}
-
-impl<T: Seek + Read> MachO<T, Resolved> {
-    pub fn load_commands(&self) -> &Vec<LoadCommand<Resolved>> {
-        self.resolved.as_ref().unwrap()
-    }
-
-    pub fn parse(mut buf: T) -> MachOResult<Self> {
-        let header = MachHeader::parse(&mut buf)?;
-        let load_commands = LoadCommand::parse_all(&mut buf, header)?;
+        let load_commands = LoadCommand::<Raw>::parse_all(&mut buf, header)?;
 
         let segs: Vec<SegmentCommand64> = load_commands
             .iter()
@@ -96,8 +77,31 @@ impl<T: Seek + Read> MachO<T, Resolved> {
 
         Ok(Self {
             header,
-            resolved: Some(load_commands),
-            raw: None,
+            buf,
+            load_commands,
+            segs,
+            phantom: PhantomData,
+        })
+    }
+}
+
+impl<T: Seek + Read> MachO<T, Resolved> {
+    pub fn parse(mut buf: T) -> MachOResult<Self> {
+        let header = MachHeader::parse(&mut buf)?;
+        let load_commands = LoadCommand::<Resolved>::parse_all(&mut buf, header)?;
+
+        let segs: Vec<SegmentCommand64> = load_commands
+            .iter()
+            .filter_map(|lc| match lc {
+                LoadCommand::Segment64(cmd) => Some(cmd),
+                _ => None,
+            })
+            .cloned()
+            .collect();
+
+        Ok(Self {
+            header,
+            load_commands,
             buf,
             segs,
             phantom: PhantomData,
@@ -115,7 +119,7 @@ impl<T: Seek + Read> MachO<T, Resolved> {
         // to satisfy by adding the base VM address, or 2. a bind, which is less obvious
         // what to do here.
         let dyldfixup: Vec<&DyldFixup> = self
-            .load_commands()
+            .load_commands
             .iter()
             .filter_map(|lc| match lc {
                 LoadCommand::DyldChainedFixups(cmd) => {
@@ -136,7 +140,7 @@ impl<T: Seek + Read> MachO<T, Resolved> {
                     fixup
                         .fixup
                         .clone()
-                        .rebase_base_vm_addr(&self.load_commands())
+                        .rebase_base_vm_addr(&self.load_commands)
                         .unwrap(),
                 ));
             } else {
@@ -255,13 +259,14 @@ impl<T: Seek + Read, A> MachO<T, A> {
     }
 }
 
-pub struct FatMachO<'a, T: Seek + Read> {
+pub struct FatMachO<'a, T: Seek + Read, A> {
     pub header: FatHeader,
     pub archs: Vec<FatArch>,
     buf: &'a mut T,
+    phantom: PhantomData<A>,
 }
 
-impl<'a, T: Seek + Read> FatMachO<'a, T> {
+impl<'a, T: Seek + Read, A> FatMachO<'a, T, A> {
     pub fn is_fat_magic(buf: &'a mut T) -> MachOResult<bool> {
         let mut magic = [0; 4];
         buf.seek(SeekFrom::Start(0)).map_err(|_| MachOErr {
@@ -296,11 +301,17 @@ impl<'a, T: Seek + Read> FatMachO<'a, T> {
             cursor = next;
         }
 
-        Ok(Self { header, archs, buf })
+        Ok(Self {
+            header,
+            archs,
+            buf,
+            phantom: PhantomData,
+        })
     }
+}
 
-    // TODO: Provide the option to return a Raw load command slice?
-    pub fn macho(
+impl<'a, T: Seek + Read> FatMachO<'a, T, Resolved> {
+    pub fn macho<A>(
         &'a mut self,
         cputype: machine::CpuType,
     ) -> MachOResult<MachO<FileSubset<'a, T>, Resolved>> {
@@ -308,25 +319,51 @@ impl<'a, T: Seek + Read> FatMachO<'a, T> {
             .archs
             .iter()
             .find(|arch| arch.cputype() == cputype)
-            .unwrap();
+            .ok_or(MachOErr {
+                detail: format!("CPU type {:?} not found in fat binary", cputype),
+            })?;
         let offset = arch.offset();
         let size = arch.size();
 
-        let mut partial = match FileSubset::new(self.buf, offset, size) {
-            Ok(subset) => subset,
-            Err(_) => {
-                return Err(MachOErr {
-                    detail: "Unable to create subset".to_string(),
-                })
-            }
-        };
+        let mut partial = FileSubset::new(self.buf, offset, size).map_err(|_| MachOErr {
+            detail: "Unable to create subset".to_string(),
+        })?;
 
-        if !MachO::<_, Resolved>::is_macho_magic(&mut partial)? {
+        if !MachO::<_, A>::is_macho_magic(&mut partial)? {
             return Err(MachOErr {
                 detail: "Fat MachO slice is not a MachO".to_string(),
             });
         }
 
-        Ok(MachO::<_, Resolved>::parse(partial).unwrap())
+        MachO::<_, Resolved>::parse(partial)
+    }
+}
+
+impl<'a, T: Seek + Read> FatMachO<'a, T, Raw> {
+    pub fn macho<A>(
+        &'a mut self,
+        cputype: machine::CpuType,
+    ) -> MachOResult<MachO<FileSubset<'a, T>, Raw>> {
+        let arch = self
+            .archs
+            .iter()
+            .find(|arch| arch.cputype() == cputype)
+            .ok_or(MachOErr {
+                detail: format!("CPU type {:?} not found in fat binary", cputype),
+            })?;
+        let offset = arch.offset();
+        let size = arch.size();
+
+        let mut partial = FileSubset::new(self.buf, offset, size).map_err(|_| MachOErr {
+            detail: "Unable to create subset".to_string(),
+        })?;
+
+        if !MachO::<_, A>::is_macho_magic(&mut partial)? {
+            return Err(MachOErr {
+                detail: "Fat MachO slice is not a MachO".to_string(),
+            });
+        }
+
+        MachO::<_, Raw>::parse(partial)
     }
 }

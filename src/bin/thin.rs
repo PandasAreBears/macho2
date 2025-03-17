@@ -4,7 +4,7 @@ use std::{
     io::{stdout, Read, Seek, Write},
 };
 
-use macho2::macho::FatMachO;
+use macho2::macho::{FatMachO, Resolved};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -22,7 +22,7 @@ fn main() {
         }
     };
 
-    let fat_macho = FatMachO::parse(&mut file).unwrap();
+    let fat_macho = FatMachO::<_, Resolved>::parse(&mut file).unwrap();
     for (i, arch) in fat_macho.archs.iter().enumerate() {
         println!("{}: {:?} {:?}", i, arch.cputype(), arch.cpusubtype());
     }
