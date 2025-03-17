@@ -1,5 +1,9 @@
 use crate::machine::{CpuSubType, CpuType};
-use nom;
+use nom::{
+    self,
+    number::{complete::be_u32, streaming::be_u64},
+    IResult,
+};
 use nom_derive::{Nom, Parse};
 
 #[repr(u32)]
@@ -16,9 +20,9 @@ pub struct FatHeader {
 }
 
 impl FatHeader {
-    pub fn parse(input: &[u8]) -> nom::IResult<&[u8], FatHeader> {
+    pub fn parse(input: &[u8]) -> IResult<&[u8], FatHeader> {
         let (input, magic) = FatMagic::parse_be(input)?;
-        let (input, nfat_arch) = nom::number::complete::be_u32(input)?;
+        let (input, nfat_arch) = be_u32(input)?;
 
         Ok((input, FatHeader { magic, nfat_arch }))
     }
@@ -34,12 +38,12 @@ pub struct FatArch32 {
 }
 
 impl FatArch32 {
-    pub fn parse(input: &[u8]) -> nom::IResult<&[u8], FatArch32> {
+    pub fn parse(input: &[u8]) -> IResult<&[u8], FatArch32> {
         let (input, cputype) = CpuType::parse_be(input)?;
         let (input, cpusubtype) = CpuSubType::parse_be(input, cputype)?;
-        let (input, offset) = nom::number::complete::be_u32(input)?;
-        let (input, size) = nom::number::complete::be_u32(input)?;
-        let (input, align) = nom::number::complete::be_u32(input)?;
+        let (input, offset) = be_u32(input)?;
+        let (input, size) = be_u32(input)?;
+        let (input, align) = be_u32(input)?;
 
         Ok((
             input,
@@ -65,13 +69,13 @@ pub struct FatArch64 {
 }
 
 impl FatArch64 {
-    pub fn parse(input: &[u8]) -> nom::IResult<&[u8], FatArch64> {
+    pub fn parse(input: &[u8]) -> IResult<&[u8], FatArch64> {
         let (input, cputype) = CpuType::parse_be(input)?;
         let (input, cpusubtype) = CpuSubType::parse_be(input, cputype)?;
-        let (input, offset) = nom::number::complete::be_u64(input)?;
-        let (input, size) = nom::number::complete::be_u64(input)?;
-        let (input, align) = nom::number::complete::be_u32(input)?;
-        let (input, reserved) = nom::number::complete::be_u32(input)?;
+        let (input, offset) = be_u64(input)?;
+        let (input, size) = be_u64(input)?;
+        let (input, align) = be_u32(input)?;
+        let (input, reserved) = be_u32(input)?;
 
         Ok((
             input,
@@ -94,7 +98,7 @@ pub enum FatArch {
 }
 
 impl FatArch {
-    pub fn parse(input: &[u8], magic: FatMagic) -> nom::IResult<&[u8], FatArch> {
+    pub fn parse(input: &[u8], magic: FatMagic) -> IResult<&[u8], FatArch> {
         match magic {
             FatMagic::Fat => {
                 let (input, arch) = FatArch32::parse(input)?;

@@ -5,7 +5,14 @@ use std::{
     vec,
 };
 
-use nom::{error::Error, number::complete::le_u32, sequence, IResult, Parser};
+use nom::{
+    error::{Error, ErrorKind},
+    multi,
+    number::complete::{be_u8, le_u16, le_u32, le_u64, le_u8},
+    sequence,
+    Err::Failure,
+    IResult, Parser,
+};
 use num_derive::FromPrimitive;
 
 use crate::{
@@ -41,14 +48,11 @@ impl RebaseOpcode {
     pub const REBASE_OPCODE_MASK: u8 = 0xF0;
     pub const REBASE_IMMEDIATE_MASK: u8 = 0x0F;
 
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], (RebaseOpcode, u8)> {
-        let (bytes, opcode) = nom::number::complete::le_u8(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], (RebaseOpcode, u8)> {
+        let (bytes, opcode) = le_u8(bytes)?;
         match num::FromPrimitive::from_u8((opcode & Self::REBASE_OPCODE_MASK) >> 4) {
             Some(opc) => Ok((bytes, (opc, (opcode & Self::REBASE_IMMEDIATE_MASK)))),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -61,7 +65,7 @@ pub struct RebaseInstruction {
 }
 
 impl RebaseInstruction {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Vec<RebaseInstruction>> {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], Vec<RebaseInstruction>> {
         if bytes.is_empty() {
             return Ok((bytes, vec![]));
         }
@@ -189,14 +193,11 @@ impl BindOpcode {
     pub const BIND_OPCODE_MASK: u8 = 0xF0;
     pub const BIND_IMMEDIATE_MASK: u8 = 0x0F;
 
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], (BindOpcode, u8)> {
-        let (bytes, opcode) = nom::number::complete::be_u8(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], (BindOpcode, u8)> {
+        let (bytes, opcode) = be_u8(bytes)?;
         match num::FromPrimitive::from_u8((opcode & Self::BIND_OPCODE_MASK) >> 4) {
             Some(opc) => Ok((bytes, (opc, (opcode & Self::BIND_IMMEDIATE_MASK)))),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -218,7 +219,7 @@ pub struct BindInstruction {
 }
 
 impl BindInstruction {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Vec<BindInstruction>> {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], Vec<BindInstruction>> {
         if bytes.is_empty() {
             return Ok((bytes, vec![]));
         }
@@ -371,7 +372,7 @@ bitflags::bitflags! {
 }
 
 impl DyldExportSymbolFlags {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldExportSymbolFlags> {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], DyldExportSymbolFlags> {
         let (bytes, flags) = read_uleb(bytes)?;
         Ok((
             bytes,
@@ -390,7 +391,7 @@ pub struct DyldExport {
 }
 
 impl DyldExport {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Vec<DyldExport>> {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], Vec<DyldExport>> {
         let mut exports = vec![];
         DyldExport::parse_recursive(bytes, bytes, String::new(), &mut exports);
         Ok((bytes, exports))
@@ -428,7 +429,7 @@ impl DyldExport {
         }
 
         p = &p[size as usize..];
-        let (mut p, child_count) = nom::number::complete::le_u8::<_, Error<_>>(p).unwrap();
+        let (mut p, child_count) = le_u8::<_, Error<_>>(p).unwrap();
         for _ in 0..child_count {
             let (next, cat_str) = string_upto_null_terminator(p).unwrap();
             let (next, child_off) = read_uleb(next).unwrap();
@@ -450,14 +451,11 @@ pub enum DyldSymbolsFormat {
 }
 
 impl DyldSymbolsFormat {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldSymbolsFormat> {
-        let (bytes, value) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], DyldSymbolsFormat> {
+        let (bytes, value) = le_u32(bytes)?;
         match num::FromPrimitive::from_u32(value) {
             Some(format) => Ok((bytes, format)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -470,14 +468,11 @@ pub enum DyldImportFormat {
 }
 
 impl DyldImportFormat {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldImportFormat> {
-        let (bytes, value) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], DyldImportFormat> {
+        let (bytes, value) = le_u32(bytes)?;
         match num::FromPrimitive::from_u32(value) {
             Some(format) => Ok((bytes, format)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -499,8 +494,8 @@ pub struct DyldChainedImport {
 }
 
 impl DyldChainedImport {
-    pub fn parse<'a>(bytes: &'a [u8], symbols: &[u8]) -> nom::IResult<&'a [u8], DyldChainedImport> {
-        let (bytes, value) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse<'a>(bytes: &'a [u8], symbols: &[u8]) -> IResult<&'a [u8], DyldChainedImport> {
+        let (bytes, value) = le_u32(bytes)?;
         let bf = DyldChainedImportBF(value);
 
         let name = string_upto_null_terminator(&symbols[bf.name_offset().to_le() as usize..])
@@ -530,12 +525,12 @@ pub struct DyldChainedFixupsHeader {
 }
 
 impl DyldChainedFixupsHeader {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldChainedFixupsHeader> {
-        let (bytes, fixups_version) = nom::number::complete::le_u32(bytes)?;
-        let (bytes, starts_offset) = nom::number::complete::le_u32(bytes)?;
-        let (bytes, imports_offset) = nom::number::complete::le_u32(bytes)?;
-        let (bytes, symbols_offset) = nom::number::complete::le_u32(bytes)?;
-        let (bytes, imports_count) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], DyldChainedFixupsHeader> {
+        let (bytes, fixups_version) = le_u32(bytes)?;
+        let (bytes, starts_offset) = le_u32(bytes)?;
+        let (bytes, imports_offset) = le_u32(bytes)?;
+        let (bytes, symbols_offset) = le_u32(bytes)?;
+        let (bytes, imports_count) = le_u32(bytes)?;
         let (bytes, imports_format) = DyldImportFormat::parse(bytes)?;
         let (bytes, symbols_format) = DyldSymbolsFormat::parse(bytes)?;
 
@@ -569,13 +564,13 @@ impl DyldStartsInSegment {
     pub const DYLD_CHAINED_PTR_START_NONE: u16 = 0xffff;
     pub const DYLD_CHAINED_PTR_START_MULTI: u16 = 0x8000;
 
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldStartsInSegment> {
-        let (bytes, size) = nom::number::complete::le_u32(bytes)?;
-        let (bytes, page_size) = nom::number::complete::le_u16(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], DyldStartsInSegment> {
+        let (bytes, size) = le_u32(bytes)?;
+        let (bytes, page_size) = le_u16(bytes)?;
         let (bytes, pointer_format) = DyldPointerFormat::parse(bytes)?;
-        let (bytes, segment_offset) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, max_valid_pointer) = nom::number::complete::le_u32(bytes)?;
-        let (mut bytes, page_count) = nom::number::complete::le_u16(bytes)?;
+        let (bytes, segment_offset) = le_u64(bytes)?;
+        let (bytes, max_valid_pointer) = le_u32(bytes)?;
+        let (mut bytes, page_count) = le_u16(bytes)?;
 
         let mut page_start = vec![];
         for _ in 0..page_count {
@@ -584,7 +579,7 @@ impl DyldStartsInSegment {
                 eprintln!("Ran out of bytes while parsing DyldStartsInSegment");
                 break;
             }
-            let (cursor, start) = nom::number::complete::le_u16::<_, Error<_>>(bytes).unwrap();
+            let (cursor, start) = le_u16::<_, Error<_>>(bytes).unwrap();
             bytes = cursor;
             if Self::DYLD_CHAINED_PTR_START_NONE == start {
                 break;
@@ -619,10 +614,9 @@ pub struct DyldStartsInImage {
 }
 
 impl DyldStartsInImage {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldStartsInImage> {
-        let (cursor, seg_count) = nom::number::complete::le_u32(bytes)?;
-        let (_, seg_info_offset) =
-            nom::multi::count(nom::number::complete::le_u32, seg_count as usize).parse(cursor)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], DyldStartsInImage> {
+        let (cursor, seg_count) = le_u32(bytes)?;
+        let (_, seg_info_offset) = multi::count(le_u32, seg_count as usize).parse(cursor)?;
 
         let mut seg_starts = vec![];
         for offset in &seg_info_offset {
@@ -665,14 +659,11 @@ pub enum DyldPointerFormat {
 
 impl DyldPointerFormat {
     pub const DYLD_POINTER_MASK: u16 = 0xFF;
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DyldPointerFormat> {
-        let (bytes, value) = nom::number::complete::le_u16(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], DyldPointerFormat> {
+        let (bytes, value) = le_u16(bytes)?;
         match num::FromPrimitive::from_u16(value & Self::DYLD_POINTER_MASK) {
             Some(format) => Ok((bytes, format)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 
@@ -708,7 +699,7 @@ pub struct DyldChainedFixupCommand<A> {
 
 impl<'a> ParseRaw<'a> for DyldChainedFixupCommand<Raw> {
     fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
-        let (_, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+        let (_, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
         Ok((
             ldcmd,
             DyldChainedFixupCommand {
@@ -730,8 +721,8 @@ impl<'a, T: Read + Seek> ParseResolved<'a, T> for DyldChainedFixupCommand<Resolv
         ldcmd: &'a [u8],
         _: MachHeader,
         _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
-        let (_, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+    ) -> IResult<&'a [u8], Self> {
+        let (_, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
         let mut blob = vec![0; cmd.datasize as usize];
         buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
         buf.read_exact(&mut blob).unwrap();
@@ -927,7 +918,7 @@ pub struct DyldExportsTrie<A> {
 
 impl<'a> ParseRaw<'a> for DyldExportsTrie<Raw> {
     fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
-        let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+        let (bytes, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
         Ok((
             bytes,
             DyldExportsTrie {
@@ -946,8 +937,8 @@ impl<'a, T: Seek + Read> ParseResolved<'a, T> for DyldExportsTrie<Resolved> {
         ldcmd: &'a [u8],
         _: MachHeader,
         _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
-        let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+    ) -> IResult<&'a [u8], Self> {
+        let (bytes, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
         let mut blob = vec![0; cmd.datasize as usize];
         buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
         buf.read_exact(&mut blob).unwrap();

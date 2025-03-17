@@ -1,12 +1,18 @@
-use std::io::{Read, Seek};
-
+use nom::{
+    bytes::complete::take,
+    error::{Error, ErrorKind},
+    multi,
+    number::complete::{le_u32, le_u64},
+    sequence,
+    Err::Failure,
+    IResult,
+};
 use num_derive::FromPrimitive;
 
 use crate::{
     header::MachHeader,
     helpers::string_upto_null_terminator,
-    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase},
-    macho::Resolved,
+    load_command::{LCLoadCommand, LoadCommandBase, ParseRegular},
 };
 
 bitflags::bitflags! {
@@ -21,8 +27,8 @@ bitflags::bitflags! {
 }
 
 impl Protection {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Protection> {
-        let (bytes, prot) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], Protection> {
+        let (bytes, prot) = le_u32(bytes)?;
         Ok((bytes, Protection::from_bits_truncate(prot)))
     }
 }
@@ -40,8 +46,8 @@ bitflags::bitflags! {
 }
 
 impl SGFlags {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], SGFlags> {
-        let (bytes, flags) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], SGFlags> {
+        let (bytes, flags) = le_u32(bytes)?;
         Ok((bytes, SGFlags::from_bits_truncate(flags)))
     }
 }
@@ -77,14 +83,11 @@ pub enum SectionType {
 impl SectionType {
     pub const SECTION_TYPE_MASK: u32 = 0x000000ff;
 
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], SectionType> {
-        let (bytes, sectype) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], SectionType> {
+        let (bytes, sectype) = le_u32(bytes)?;
         match num::FromPrimitive::from_u32(sectype & Self::SECTION_TYPE_MASK) {
             Some(sectype) => Ok((bytes, sectype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -112,8 +115,8 @@ impl SectionAttributes {
     pub const SECTION_ATTRIBUTES_MASK: u32 = SectionAttributes::SECTION_ATTRIBUTES_USR_MASK
         | SectionAttributes::SECTION_ATTRIBUTES_SYS_MASK;
 
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], SectionAttributes> {
-        let (bytes, secattrs) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], SectionAttributes> {
+        let (bytes, secattrs) = le_u32(bytes)?;
         Ok((
             bytes,
             SectionAttributes::from_bits_truncate(secattrs & Self::SECTION_ATTRIBUTES_MASK),
@@ -138,29 +141,20 @@ pub struct Section32 {
 }
 
 impl Section32 {
-    pub fn parse<'a>(bytes: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
-        let (bytes, sectname_bytes) = nom::bytes::complete::take(16usize)(bytes)?;
+    pub fn parse<'a>(bytes: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (bytes, sectname_bytes) = take(16usize)(bytes)?;
         let (_, sectname) = string_upto_null_terminator(sectname_bytes)?;
-        let (bytes, segname_bytes) = nom::bytes::complete::take(16usize)(bytes)?;
+        let (bytes, segname_bytes) = take(16usize)(bytes)?;
         let (_, segname) = string_upto_null_terminator(segname_bytes)?;
 
-        let (bytes, (addr, size, offset, align, reloff, nreloc)) = nom::sequence::tuple((
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-        ))(bytes)?;
+        let (bytes, (addr, size, offset, align, reloff, nreloc)) =
+            sequence::tuple((le_u32, le_u32, le_u32, le_u32, le_u32, le_u32))(bytes)?;
 
         // Feed in the same byte for these two
         let (_, flags_sectype) = SectionType::parse(bytes)?;
         let (bytes, flags_secattrs) = SectionAttributes::parse(bytes)?;
 
-        let (bytes, (reserved1, reserved2)) = nom::sequence::tuple((
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-        ))(bytes)?;
+        let (bytes, (reserved1, reserved2)) = sequence::tuple((le_u32, le_u32))(bytes)?;
 
         Ok((
             bytes,
@@ -200,30 +194,21 @@ pub struct Section64 {
 }
 
 impl Section64 {
-    pub fn parse<'a>(bytes: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
-        let (bytes, sectname) = nom::bytes::complete::take(16usize)(bytes)?;
+    pub fn parse<'a>(bytes: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (bytes, sectname) = take(16usize)(bytes)?;
         let (_, sectname) = string_upto_null_terminator(sectname)?;
-        let (bytes, segname) = nom::bytes::complete::take(16usize)(bytes)?;
+        let (bytes, segname) = take(16usize)(bytes)?;
         let (_, segname) = string_upto_null_terminator(segname)?;
 
-        let (bytes, (addr, size, offset, align, reloff, nreloc)) = nom::sequence::tuple((
-            nom::number::complete::le_u64,
-            nom::number::complete::le_u64,
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-        ))(bytes)?;
+        let (bytes, (addr, size, offset, align, reloff, nreloc)) =
+            sequence::tuple((le_u64, le_u64, le_u32, le_u32, le_u32, le_u32))(bytes)?;
 
         // Feed in the same byte for these two
         let (_, flags_sectype) = SectionType::parse(bytes)?;
         let (bytes, flags_secattrs) = SectionAttributes::parse(bytes)?;
 
-        let (bytes, (reserved1, reserved2, reserved3)) = nom::sequence::tuple((
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-        ))(bytes)?;
+        let (bytes, (reserved1, reserved2, reserved3)) =
+            sequence::tuple((le_u32, le_u32, le_u32))(bytes)?;
 
         Ok((
             bytes,
@@ -262,34 +247,21 @@ pub struct SegmentCommand32 {
     pub sects: Vec<Section32>,
 }
 
-impl SegmentCommand32 {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for SegmentCommand32 {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, segname) = nom::bytes::complete::take(16usize)(cursor)?;
+        let (cursor, segname) = take(16usize)(cursor)?;
         let (_, segname) = string_upto_null_terminator(segname)?;
 
-        let (cursor, (vmaddr, vmsize, fileoff, filesize)) = nom::sequence::tuple((
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-        ))(cursor)?;
+        let (cursor, (vmaddr, vmsize, fileoff, filesize)) =
+            sequence::tuple((le_u32, le_u32, le_u32, le_u32))(cursor)?;
 
-        let (cursor, (maxprot, initprot, nsects)) = nom::sequence::tuple((
-            Protection::parse,
-            Protection::parse,
-            nom::number::complete::le_u32,
-        ))(cursor)?;
+        let (cursor, (maxprot, initprot, nsects)) =
+            sequence::tuple((Protection::parse, Protection::parse, le_u32))(cursor)?;
 
         let (cursor, flags) = SGFlags::parse(cursor)?;
 
-        let (cursor, sects) = nom::multi::count(Section32::parse, nsects as usize)(cursor)?;
+        let (cursor, sects) = multi::count(Section32::parse, nsects as usize)(cursor)?;
 
         Ok((
             cursor,
@@ -327,33 +299,21 @@ pub struct SegmentCommand64 {
     pub sections: Vec<Section64>,
 }
 
-impl SegmentCommand64 {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for SegmentCommand64 {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, segname) = nom::bytes::complete::take(16usize)(cursor)?;
+        let (cursor, segname) = take(16usize)(cursor)?;
         let (_, segname) = string_upto_null_terminator(segname)?;
 
-        let (cursor, (vmaddr, vmsize, fileoff, filesize)) = nom::sequence::tuple((
-            nom::number::complete::le_u64,
-            nom::number::complete::le_u64,
-            nom::number::complete::le_u64,
-            nom::number::complete::le_u64,
-        ))(cursor)?;
+        let (cursor, (vmaddr, vmsize, fileoff, filesize)) =
+            sequence::tuple((le_u64, le_u64, le_u64, le_u64))(cursor)?;
 
-        let (cursor, (maxprot, initprot, nsects, flags)) = nom::sequence::tuple((
-            Protection::parse,
-            Protection::parse,
-            nom::number::complete::le_u32,
-            SGFlags::parse,
-        ))(cursor)?;
+        let (cursor, (maxprot, initprot, nsects, flags)) =
+            sequence::tuple((Protection::parse, Protection::parse, le_u32, SGFlags::parse))(
+                cursor,
+            )?;
 
-        let (cursor, sections) = nom::multi::count(Section64::parse, nsects as usize)(cursor)?;
+        let (cursor, sections) = multi::count(Section64::parse, nsects as usize)(cursor)?;
 
         Ok((
             cursor,

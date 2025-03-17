@@ -3,7 +3,10 @@ use std::{
     marker::PhantomData,
 };
 
-use nom::number::complete::le_u32;
+use nom::{
+    number::complete::{le_u128, le_u32, le_u64},
+    IResult,
+};
 use nom_derive::{Nom, Parse};
 use strum_macros::{Display, EnumString};
 use uuid::Uuid;
@@ -11,7 +14,9 @@ use uuid::Uuid;
 use crate::{
     header::MachHeader,
     helpers::{read_uleb_many, string_upto_null_terminator, version_string},
-    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved},
+    load_command::{
+        LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseRegular, ParseResolved,
+    },
     machine::{ThreadState, ThreadStateBase},
     macho::{Raw, Resolved},
 };
@@ -61,17 +66,11 @@ pub struct SymsegCommand {
     pub size: u32,
 }
 
-impl SymsegCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for SymsegCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, offset) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, size) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, offset) = le_u32(cursor)?;
+        let (cursor, size) = le_u32(cursor)?;
 
         Ok((
             cursor,
@@ -92,14 +91,12 @@ pub struct ThreadCommand {
     pub threads: Vec<ThreadState>,
 }
 
-impl ThreadCommand {
-    pub fn parse<'a, T: Read + Seek>(
-        _: &mut T,
+impl<'a> ParseRegular<'a> for ThreadCommand {
+    fn parse(
         base: LoadCommandBase,
         ldcmd: &'a [u8],
-        header: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+        header: &MachHeader,
+    ) -> IResult<&'a [u8], Self> {
         let end = &ldcmd[base.cmdsize as usize..];
         let (mut cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let mut threads = Vec::new();
@@ -135,23 +132,17 @@ pub struct RoutinesCommand64 {
     pub reserved6: u64,
 }
 
-impl RoutinesCommand64 {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for RoutinesCommand64 {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, init_address) = nom::number::complete::le_u64(cursor)?;
-        let (cursor, init_module) = nom::number::complete::le_u64(cursor)?;
-        let (cursor, reserved1) = nom::number::complete::le_u64(cursor)?;
-        let (cursor, reserved2) = nom::number::complete::le_u64(cursor)?;
-        let (cursor, reserved3) = nom::number::complete::le_u64(cursor)?;
-        let (cursor, reserved4) = nom::number::complete::le_u64(cursor)?;
-        let (cursor, reserved5) = nom::number::complete::le_u64(cursor)?;
-        let (cursor, reserved6) = nom::number::complete::le_u64(cursor)?;
+        let (cursor, init_address) = le_u64(cursor)?;
+        let (cursor, init_module) = le_u64(cursor)?;
+        let (cursor, reserved1) = le_u64(cursor)?;
+        let (cursor, reserved2) = le_u64(cursor)?;
+        let (cursor, reserved3) = le_u64(cursor)?;
+        let (cursor, reserved4) = le_u64(cursor)?;
+        let (cursor, reserved5) = le_u64(cursor)?;
+        let (cursor, reserved6) = le_u64(cursor)?;
 
         Ok((
             cursor,
@@ -179,17 +170,11 @@ pub struct TwoLevelHintsCommand {
     pub nhints: u32,
 }
 
-impl TwoLevelHintsCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for TwoLevelHintsCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, offset) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, nhints) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, offset) = le_u32(cursor)?;
+        let (cursor, nhints) = le_u32(cursor)?;
 
         Ok((
             cursor,
@@ -210,16 +195,10 @@ pub struct PrebindCksumCommand {
     pub cksum: u32,
 }
 
-impl PrebindCksumCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for PrebindCksumCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, cksum) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, cksum) = le_u32(cursor)?;
 
         Ok((
             cursor,
@@ -239,16 +218,10 @@ pub struct UuidCommand {
     pub uuid: Uuid,
 }
 
-impl UuidCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for UuidCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, uuid) = nom::number::complete::le_u128(cursor)?;
+        let (cursor, uuid) = le_u128(cursor)?;
 
         Ok((
             cursor,
@@ -268,16 +241,10 @@ pub struct RpathCommand {
     pub path: String,
 }
 
-impl RpathCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for RpathCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (_, path_offset) = nom::number::complete::le_u32(cursor)?;
+        let (_, path_offset) = le_u32(cursor)?;
         let (cursor, path) = string_upto_null_terminator(&ldcmd[path_offset as usize..])?;
 
         Ok((
@@ -300,14 +267,13 @@ pub struct LinkeditDataCommand {
 }
 
 impl LinkeditDataCommand {
-    pub fn parse<'a>(bytes: &'a [u8], base: LoadCommandBase) -> nom::IResult<&'a [u8], Self> {
-        let end = &bytes[base.cmdsize as usize..];
-        let (cursor, _) = LoadCommandBase::skip(bytes)?;
+    pub fn parse<'a>(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, dataoff) = le_u32(cursor)?;
-        let (_, datasize) = le_u32(cursor)?;
+        let (cursor, datasize) = le_u32(cursor)?;
 
         Ok((
-            end,
+            cursor,
             LinkeditDataCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -336,8 +302,8 @@ pub struct FunctionStartsCommand<A> {
 }
 
 impl<'a> ParseRaw<'a> for FunctionStartsCommand<Raw> {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
-        let (bytes, linkeditcmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (bytes, linkeditcmd) = LinkeditDataCommand::parse(base, ldcmd)?;
         Ok((
             bytes,
             FunctionStartsCommand {
@@ -359,8 +325,8 @@ impl<'a, T: Read + Seek> ParseResolved<'a, T> for FunctionStartsCommand<Resolved
         ldcmd: &'a [u8],
         _: MachHeader,
         _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
-        let (bytes, linkeditcmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+    ) -> IResult<&'a [u8], Self> {
+        let (bytes, linkeditcmd) = LinkeditDataCommand::parse(base, ldcmd)?;
         let mut funcs_blob = vec![0u8; linkeditcmd.datasize as usize];
         buf.seek(SeekFrom::Start(linkeditcmd.dataoff as u64))
             .unwrap();
@@ -404,18 +370,12 @@ pub struct EncryptionInfoCommand {
     pub cryptid: u32,
 }
 
-impl EncryptionInfoCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for EncryptionInfoCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, cryptoff) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, cryptsize) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, cryptid) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, cryptoff) = le_u32(cursor)?;
+        let (cursor, cryptsize) = le_u32(cursor)?;
+        let (cursor, cryptid) = le_u32(cursor)?;
 
         Ok((
             cursor,
@@ -440,19 +400,13 @@ pub struct EncryptionInfoCommand64 {
     pub pad: u32,
 }
 
-impl EncryptionInfoCommand64 {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for EncryptionInfoCommand64 {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, cryptoff) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, cryptsize) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, cryptid) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, pad) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, cryptoff) = le_u32(cursor)?;
+        let (cursor, cryptsize) = le_u32(cursor)?;
+        let (cursor, cryptid) = le_u32(cursor)?;
+        let (cursor, pad) = le_u32(cursor)?;
 
         Ok((
             cursor,
@@ -476,17 +430,11 @@ pub struct VersionMinCommand {
     pub sdk: String,
 }
 
-impl VersionMinCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for VersionMinCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, version) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, sdk) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, version) = le_u32(cursor)?;
+        let (cursor, sdk) = le_u32(cursor)?;
 
         Ok((
             cursor,
@@ -507,9 +455,9 @@ pub struct BuildToolVersion {
 }
 
 impl BuildToolVersion {
-    pub fn parse<'a>(bytes: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
+    pub fn parse<'a>(bytes: &'a [u8]) -> IResult<&'a [u8], Self> {
         let (bytes, tool) = Tool::parse_le(bytes)?;
-        let (bytes, version) = nom::number::complete::le_u32(bytes)?;
+        let (bytes, version) = le_u32(bytes)?;
 
         Ok((
             bytes,
@@ -532,19 +480,13 @@ pub struct BuildVersionCommand {
     pub tools: Vec<BuildToolVersion>,
 }
 
-impl BuildVersionCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for BuildVersionCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, platform) = Platform::parse_le(cursor)?;
-        let (cursor, minos) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, sdk) = nom::number::complete::le_u32(cursor)?;
-        let (mut cursor, ntools) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, minos) = le_u32(cursor)?;
+        let (cursor, sdk) = le_u32(cursor)?;
+        let (mut cursor, ntools) = le_u32(cursor)?;
 
         let mut tools = Vec::new();
         for _ in 0..ntools {
@@ -580,16 +522,10 @@ pub struct LinkerOptionCommand {
     pub strings: Vec<String>,
 }
 
-impl LinkerOptionCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for LinkerOptionCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (mut cursor, _) = LoadCommandBase::skip(&ldcmd)?;
-        let (_, count) = nom::number::complete::le_u32(cursor)?;
+        let (_, count) = le_u32(cursor)?;
 
         let mut strings = Vec::new();
         for _ in 0..count {
@@ -618,17 +554,11 @@ pub struct EntryPointCommand {
     pub stacksize: u64,
 }
 
-impl EntryPointCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for EntryPointCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, entryoff) = nom::number::complete::le_u64(cursor)?;
-        let (cursor, stacksize) = nom::number::complete::le_u64(cursor)?;
+        let (cursor, entryoff) = le_u64(cursor)?;
+        let (cursor, stacksize) = le_u64(cursor)?;
 
         Ok((
             cursor,
@@ -649,16 +579,10 @@ pub struct SourceVersionCommand {
     pub version: String, // A.B.C.D.E packed as a24.b10.c10.d10.e10
 }
 
-impl SourceVersionCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for SourceVersionCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, version) = nom::number::complete::le_u64(cursor)?;
+        let (cursor, version) = le_u64(cursor)?;
 
         Ok((
             cursor,
@@ -687,18 +611,12 @@ pub struct NoteCommand {
     pub size: u64,
 }
 
-impl NoteCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for NoteCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, data_owner_offset) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, offset) = nom::number::complete::le_u64(cursor)?;
-        let (_, size) = nom::number::complete::le_u64(cursor)?;
+        let (cursor, data_owner_offset) = le_u32(cursor)?;
+        let (cursor, offset) = le_u64(cursor)?;
+        let (_, size) = le_u64(cursor)?;
 
         let (cursor, data_owner) =
             string_upto_null_terminator(&ldcmd[data_owner_offset as usize..])?;
@@ -726,19 +644,13 @@ pub struct FilesetEntryCommand {
     pub reserved: u32,
 }
 
-impl FilesetEntryCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for FilesetEntryCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, vmaddr) = nom::number::complete::le_u64(cursor)?;
-        let (cursor, fileoff) = nom::number::complete::le_u64(cursor)?;
-        let (cursor, entry_id_offset) = nom::number::complete::le_u32(cursor)?;
-        let (_, reserved) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, vmaddr) = le_u64(cursor)?;
+        let (cursor, fileoff) = le_u64(cursor)?;
+        let (cursor, entry_id_offset) = le_u32(cursor)?;
+        let (_, reserved) = le_u32(cursor)?;
 
         let (cursor, entry_id) = string_upto_null_terminator(&ldcmd[entry_id_offset as usize..])?;
 

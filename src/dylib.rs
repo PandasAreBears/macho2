@@ -1,9 +1,11 @@
 use std::io::{Read, Seek};
 
+use nom::{number::complete::le_u32, sequence, IResult};
+
 use crate::{
     header::MachHeader,
     helpers::{string_upto_null_terminator, version_string},
-    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase},
+    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase, ParseRegular},
     macho::Resolved,
 };
 
@@ -19,8 +21,8 @@ bitflags::bitflags! {
 }
 
 impl DylibUseFlags {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], DylibUseFlags> {
-        let (bytes, flags) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], DylibUseFlags> {
+        let (bytes, flags) = le_u32(bytes)?;
         Ok((bytes, DylibUseFlags::from_bits_truncate(flags)))
     }
 }
@@ -35,23 +37,12 @@ pub struct DylibCommand {
     pub compatibility_version: String,
 }
 
-impl DylibCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for DylibCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
         let (_, (name_offset, timestamp, current_version, compatibility_version)) =
-            nom::sequence::tuple((
-                nom::number::complete::le_u32,
-                nom::number::complete::le_u32,
-                nom::number::complete::le_u32,
-                nom::number::complete::le_u32,
-            ))(cursor)?;
+            sequence::tuple((le_u32, le_u32, le_u32, le_u32))(cursor)?;
 
         let (cursor, name) = string_upto_null_terminator(&ldcmd[name_offset as usize..])?;
 
@@ -88,15 +79,11 @@ impl DylibUseCommand {
         ldcmd: &'a [u8],
         _: MachHeader,
         _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+    ) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
-        let (_, (nameoff, marker, current_version, compat_version)) = nom::sequence::tuple((
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-        ))(cursor)?;
+        let (_, (nameoff, marker, current_version, compat_version)) =
+            sequence::tuple((le_u32, le_u32, le_u32, le_u32))(cursor)?;
         let (cursor, flags) = DylibUseFlags::parse(cursor)?;
 
         Ok((
@@ -121,17 +108,11 @@ pub struct SubFrameworkCommand {
     pub umbrella: String,
 }
 
-impl SubFrameworkCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for SubFrameworkCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
-        let (_, umbrella_offset) = nom::number::complete::le_u32(cursor)?;
+        let (_, umbrella_offset) = le_u32(cursor)?;
         let (cursor, umbrella) = string_upto_null_terminator(&ldcmd[umbrella_offset as usize..])?;
 
         Ok((
@@ -152,17 +133,11 @@ pub struct SubClientCommand {
     pub client: String,
 }
 
-impl SubClientCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for SubClientCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
-        let (_, client_offset) = nom::number::complete::le_u32(cursor)?;
+        let (_, client_offset) = le_u32(cursor)?;
         let (cursor, client) = string_upto_null_terminator(&ldcmd[client_offset as usize..])?;
 
         Ok((
@@ -183,17 +158,11 @@ pub struct SubUmbrellaCommand {
     pub sub_umbrella: String,
 }
 
-impl SubUmbrellaCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for SubUmbrellaCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
-        let (_, sub_umbrella_offset) = nom::number::complete::le_u32(cursor)?;
+        let (_, sub_umbrella_offset) = le_u32(cursor)?;
         let (cursor, sub_umbrella) =
             string_upto_null_terminator(&ldcmd[sub_umbrella_offset as usize..])?;
 
@@ -215,17 +184,11 @@ pub struct SubLibraryCommand {
     pub sub_library: String,
 }
 
-impl SubLibraryCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for SubLibraryCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
-        let (_, sub_library_offset) = nom::number::complete::le_u32(cursor)?;
+        let (_, sub_library_offset) = le_u32(cursor)?;
         let (cursor, sub_library) =
             string_upto_null_terminator(&ldcmd[sub_library_offset as usize..])?;
 
@@ -249,21 +212,12 @@ pub struct PreboundDylibCommand {
     pub linked_modules: String,
 }
 
-impl PreboundDylibCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for PreboundDylibCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
-        let (_, (name_offset, nmodules, linked_modules_offset)) = nom::sequence::tuple((
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
-        ))(cursor)?;
+        let (_, (name_offset, nmodules, linked_modules_offset)) =
+            sequence::tuple((le_u32, le_u32, le_u32))(cursor)?;
 
         let (_, name) = string_upto_null_terminator(
             &ldcmd[name_offset as usize..linked_modules_offset as usize],
@@ -291,17 +245,11 @@ pub struct DylinkerCommand {
     pub name: String,
 }
 
-impl DylinkerCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+impl<'a> ParseRegular<'a> for DylinkerCommand {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
-        let (_, name_offset) = nom::number::complete::le_u32(cursor)?;
+        let (_, name_offset) = le_u32(cursor)?;
         let (cursor, name) = string_upto_null_terminator(&ldcmd[name_offset as usize..])?;
 
         Ok((

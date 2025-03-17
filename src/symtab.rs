@@ -3,7 +3,13 @@ use std::{
     marker::PhantomData,
 };
 
-use nom::{number::complete::le_u32, IResult};
+use nom::{
+    error::{self, Error, ErrorKind},
+    number::complete::{le_u16, le_u32, le_u64, le_u8},
+    sequence,
+    Err::Failure,
+    IResult,
+};
 use num_derive::FromPrimitive;
 
 use crate::{
@@ -29,14 +35,11 @@ pub enum NlistTypeType {
 impl NlistTypeType {
     pub const NLIST_TYPE_TYPE_BITMASK: u8 = 0x0e;
 
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], NlistTypeType> {
-        let (bytes, n_type) = nom::number::complete::le_u8(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], NlistTypeType> {
+        let (bytes, n_type) = le_u8(bytes)?;
         match num::FromPrimitive::from_u8(n_type & Self::NLIST_TYPE_TYPE_BITMASK) {
             Some(n_type) => Ok((bytes, n_type)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -54,14 +57,11 @@ pub enum NlistReferenceType {
 impl NlistReferenceType {
     pub const NLIST_REFERENCE_FLAG_BITMASK: u8 = 0x7;
 
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], NlistReferenceType> {
-        let (bytes, n_type) = nom::number::complete::le_u8(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], NlistReferenceType> {
+        let (bytes, n_type) = le_u8(bytes)?;
         match num::FromPrimitive::from_u8(n_type & Self::NLIST_REFERENCE_FLAG_BITMASK) {
             Some(n_type) => Ok((bytes, n_type)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(error::Error::new(bytes, error::ErrorKind::Tag))),
         }
     }
 }
@@ -83,9 +83,9 @@ impl NlistDesc {
     pub const N_WEAK_DEF_BITMASK: u16 = 0x800;
     pub const LIBRARY_ORDINAL_BITMASK: u16 = 0xff00;
 
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], NlistDesc> {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], NlistDesc> {
         let cursor = bytes;
-        let (bytes, n_desc) = nom::number::complete::le_u16(cursor)?;
+        let (bytes, n_desc) = le_u16(cursor)?;
         let (_, reference_type) = NlistReferenceType::parse(cursor)?;
 
         Ok((
@@ -115,9 +115,9 @@ impl NlistType {
     pub const NLIST_TYPE_PEXT_BITMASK: u8 = 0x10;
     pub const NLIST_TYPE_EXT_BITMASK: u8 = 0x01;
 
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], NlistType> {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], NlistType> {
         let cursor = bytes;
-        let (bytes, n_type) = nom::number::complete::le_u8(cursor)?;
+        let (bytes, n_type) = le_u8(cursor)?;
         let (_, type_) = NlistTypeType::parse(cursor)?;
         Ok((
             bytes,
@@ -143,15 +143,15 @@ pub struct Nlist64 {
 impl Nlist64 {
     pub const SIZE: u8 = 16;
 
-    pub fn parse<'a>(bytes: &'a [u8], strings: &[u8]) -> nom::IResult<&'a [u8], Self> {
-        let (cursor, n_strx) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse<'a>(bytes: &'a [u8], strings: &[u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, n_strx) = le_u32(bytes)?;
         let n_strx = string_upto_null_terminator(&strings[n_strx as usize..])
             .unwrap()
             .1;
         let (cursor, n_type) = NlistType::parse(cursor)?;
-        let (cursor, n_sect) = nom::number::complete::le_u8(cursor)?;
+        let (cursor, n_sect) = le_u8(cursor)?;
         let (cursor, n_desc) = NlistDesc::parse(cursor)?;
-        let (cursor, n_value) = nom::number::complete::le_u64(cursor)?;
+        let (cursor, n_value) = le_u64(cursor)?;
 
         Ok((
             cursor,
@@ -167,29 +167,50 @@ impl Nlist64 {
 }
 
 #[derive(Debug, Clone)]
-pub struct SymtabCommand {
+pub struct SymtabCommand<A> {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
     pub symoff: u32,
     pub nsyms: u32,
     pub stroff: u32,
     pub strsize: u32,
-    pub symbols: Vec<Nlist64>,
+    pub symbols: Option<Vec<Nlist64>>,
+
+    phantom: PhantomData<A>,
 }
 
-impl SymtabCommand {
-    pub fn parse<'a, T: Seek + Read>(
+impl<'a> ParseRaw<'a> for SymtabCommand<Raw> {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+        let (cursor, (symoff, nsyms, stroff, strsize)) =
+            sequence::tuple((le_u32, le_u32, le_u32, le_u32))(cursor)?;
+        Ok((
+            cursor,
+            SymtabCommand {
+                cmd: base.cmd,
+                cmdsize: base.cmdsize,
+                symoff,
+                nsyms,
+                stroff,
+                strsize,
+                symbols: None,
+                phantom: PhantomData,
+            },
+        ))
+    }
+}
+
+impl<'a, T: Seek + Read> ParseResolved<'a, T> for SymtabCommand<Resolved> {
+    fn parse(
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
         _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
+    ) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, symoff) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, nsyms) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, stroff) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, strsize) = nom::number::complete::le_u32(cursor)?;
+        let (cursor, (symoff, nsyms, stroff, strsize)) =
+            sequence::tuple((le_u32, le_u32, le_u32, le_u32))(cursor)?;
 
         let mut string_pool = vec![0u8; strsize as usize];
         buf.seek(std::io::SeekFrom::Start(stroff as u64)).unwrap();
@@ -219,7 +240,8 @@ impl SymtabCommand {
                 nsyms,
                 stroff,
                 strsize,
-                symbols,
+                symbols: Some(symbols),
+                phantom: PhantomData,
             },
         ))
     }
@@ -284,7 +306,7 @@ impl<'a> ParseRaw<'a> for DysymtabCommand<Raw> {
                 locreloff,
                 nlocrel,
             ),
-        ) = nom::sequence::tuple((
+        ) = sequence::tuple((
             le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
             le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
         ))(ldcmd)?;
@@ -353,7 +375,7 @@ impl<'a, T: Seek + Read> ParseResolved<'a, T> for DysymtabCommand<Resolved> {
                 locreloff,
                 nlocrel,
             ),
-        ) = nom::sequence::tuple((
+        ) = sequence::tuple((
             le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
             le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
         ))(cursor)?;
@@ -370,21 +392,22 @@ impl<'a, T: Seek + Read> ParseResolved<'a, T> for DysymtabCommand<Resolved> {
             .unwrap();
 
         let locals = Some(
-            symtab.symbols[ilocalsym as usize..(ilocalsym + nlocalsym) as usize]
+            symtab.symbols.as_ref().unwrap()[ilocalsym as usize..(ilocalsym + nlocalsym) as usize]
                 .iter()
                 .cloned()
                 .collect(),
         );
 
         let extdefs = Some(
-            symtab.symbols[iextdefsym as usize..(iextdefsym + nextdefsym) as usize]
+            symtab.symbols.as_ref().unwrap()
+                [iextdefsym as usize..(iextdefsym + nextdefsym) as usize]
                 .iter()
                 .cloned()
                 .collect(),
         );
 
         let undefs = Some(
-            symtab.symbols[iundefsym as usize..(iundefsym + nundefsym) as usize]
+            symtab.symbols.as_ref().unwrap()[iundefsym as usize..(iundefsym + nundefsym) as usize]
                 .iter()
                 .cloned()
                 .collect(),
@@ -399,8 +422,7 @@ impl<'a, T: Seek + Read> ParseResolved<'a, T> for DysymtabCommand<Resolved> {
             let mut indices = Vec::new();
             let mut cursor = &indirect_bytes[..];
             while !cursor.is_empty() {
-                let (remaining, index) =
-                    nom::number::complete::le_u32::<_, nom::error::Error<_>>(cursor).unwrap();
+                let (remaining, index) = le_u32::<_, error::Error<_>>(cursor).unwrap();
                 cursor = remaining;
                 if index & Self::INDIRECT_SYMBOL_LOCAL > 0 {
                     // Symbol was strip(1)'d
@@ -415,7 +437,7 @@ impl<'a, T: Seek + Read> ParseResolved<'a, T> for DysymtabCommand<Resolved> {
             Some(
                 indices
                     .iter()
-                    .map(|&i| symtab.symbols[i as usize].clone())
+                    .map(|&i| symtab.symbols.as_ref().unwrap()[i as usize].clone())
                     .collect(),
             )
         };

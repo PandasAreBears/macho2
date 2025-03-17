@@ -1,10 +1,7 @@
-pub fn string_upto_null_terminator(bytes: &[u8]) -> nom::IResult<&[u8], String> {
-    let (bytes, name_bytes) = match nom::bytes::complete::take_until::<
-        &str,
-        &[u8],
-        nom::error::Error<&[u8]>,
-    >("\0")(bytes)
-    {
+use nom::{bytes::complete, error::Error, number, IResult};
+
+pub fn string_upto_null_terminator(bytes: &[u8]) -> IResult<&[u8], String> {
+    let (bytes, name_bytes) = match complete::take_until::<&str, &[u8], Error<&[u8]>>("\0")(bytes) {
         Ok((bytes, name_bytes)) => (bytes, name_bytes),
         Err(_) => return Ok((&[], String::from_utf8(bytes.to_vec()).unwrap())),
     };
@@ -21,13 +18,13 @@ pub fn version_string(version: u32) -> String {
     )
 }
 
-pub fn read_uleb(bytes: &[u8]) -> nom::IResult<&[u8], u64> {
+pub fn read_uleb(bytes: &[u8]) -> IResult<&[u8], u64> {
     let mut result = 0;
     let mut shift = 0;
     let mut cursor = bytes;
 
     loop {
-        let (remaining, byte) = nom::number::complete::u8(cursor)?;
+        let (remaining, byte) = number::complete::u8(cursor)?;
         cursor = remaining;
 
         result |= ((byte & 0x7f) as u64) << shift;
@@ -40,7 +37,7 @@ pub fn read_uleb(bytes: &[u8]) -> nom::IResult<&[u8], u64> {
     Ok((cursor, result))
 }
 
-pub fn read_uleb_many<'a>(mut bytes: &'a [u8]) -> nom::IResult<&'a [u8], Vec<u64>> {
+pub fn read_uleb_many<'a>(mut bytes: &'a [u8]) -> IResult<&'a [u8], Vec<u64>> {
     let mut result = Vec::new();
     if bytes.is_empty() {
         return Ok((bytes, result));
@@ -59,14 +56,14 @@ pub fn read_uleb_many<'a>(mut bytes: &'a [u8]) -> nom::IResult<&'a [u8], Vec<u64
     Ok((bytes, result))
 }
 
-pub fn read_sleb(bytes: &[u8]) -> nom::IResult<&[u8], i64> {
+pub fn read_sleb(bytes: &[u8]) -> IResult<&[u8], i64> {
     let mut result = 0;
     let mut shift = 0;
     let mut cursor = bytes;
     let mut byte;
 
     loop {
-        let (remaining, current) = nom::number::complete::u8(cursor)?;
+        let (remaining, current) = number::complete::u8(cursor)?;
         cursor = remaining;
         byte = current;
 

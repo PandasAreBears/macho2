@@ -4,7 +4,14 @@ use std::{
 };
 
 use bitflags;
-use nom::{self, IResult, Parser};
+use nom::{
+    self,
+    error::{Error, ErrorKind},
+    multi,
+    number::complete::{be_u32, be_u8},
+    Err::Failure,
+    IResult, Parser,
+};
 use num_derive::FromPrimitive;
 
 use crate::{
@@ -65,14 +72,11 @@ pub enum CodeSignMagic {
 }
 
 impl CodeSignMagic {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignMagic> {
-        let (bytes, magic) = nom::number::complete::be_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignMagic> {
+        let (bytes, magic) = be_u32(bytes)?;
         match num::FromPrimitive::from_u32(magic) {
             Some(magic) => Ok((bytes, magic)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -88,14 +92,11 @@ pub enum CodeSignSupports {
 }
 
 impl CodeSignSupports {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignSupports> {
-        let (bytes, supports) = nom::number::complete::be_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignSupports> {
+        let (bytes, supports) = be_u32(bytes)?;
         match num::FromPrimitive::from_u32(supports) {
             Some(supports) => Ok((bytes, supports)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -124,14 +125,11 @@ pub enum CodeSignSlot {
 }
 
 impl CodeSignSlot {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignSlot> {
-        let (bytes, slot) = nom::number::complete::be_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignSlot> {
+        let (bytes, slot) = be_u32(bytes)?;
         match num::FromPrimitive::from_u32(slot) {
             Some(slot) => Ok((bytes, slot)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -143,14 +141,11 @@ pub enum CodeSignTypeIndex {
 }
 
 impl CodeSignTypeIndex {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignTypeIndex> {
-        let (bytes, index) = nom::number::complete::be_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignTypeIndex> {
+        let (bytes, index) = be_u32(bytes)?;
         match num::FromPrimitive::from_u32(index) {
             Some(index) => Ok((bytes, index)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -165,14 +160,11 @@ pub enum CodeSignHashType {
 }
 
 impl CodeSignHashType {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignHashType> {
-        let (bytes, hash_type) = nom::number::complete::be_u8(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignHashType> {
+        let (bytes, hash_type) = be_u8(bytes)?;
         match num::FromPrimitive::from_u8(hash_type) {
             Some(hash_type) => Ok((bytes, hash_type)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -188,14 +180,11 @@ pub enum CodeSignSignerType {
 }
 
 impl CodeSignSignerType {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignSignerType> {
-        let (bytes, signer_type) = nom::number::complete::be_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignSignerType> {
+        let (bytes, signer_type) = be_u32(bytes)?;
         match num::FromPrimitive::from_u32(signer_type) {
             Some(signer_type) => Ok((bytes, signer_type)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -216,14 +205,11 @@ pub enum CodeSignValidationCategory {
 }
 
 impl CodeSignValidationCategory {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignValidationCategory> {
-        let (bytes, category) = nom::number::complete::be_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignValidationCategory> {
+        let (bytes, category) = be_u32(bytes)?;
         match num::FromPrimitive::from_u32(category) {
             Some(category) => Ok((bytes, category)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -236,14 +222,11 @@ pub enum CodeSignLinkageApplicaition {
 }
 
 impl CodeSignLinkageApplicaition {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignLinkageApplicaition> {
-        let (bytes, application) = nom::number::complete::be_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignLinkageApplicaition> {
+        let (bytes, application) = be_u32(bytes)?;
         match num::FromPrimitive::from_u32(application) {
             Some(application) => Ok((bytes, application)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -256,14 +239,11 @@ pub enum CodeSignLinkageApplicationOOPJITSubType {
 }
 
 impl CodeSignLinkageApplicationOOPJITSubType {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignLinkageApplicationOOPJITSubType> {
-        let (bytes, subtype) = nom::number::complete::be_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignLinkageApplicationOOPJITSubType> {
+        let (bytes, subtype) = be_u32(bytes)?;
         match num::FromPrimitive::from_u32(subtype) {
             Some(subtype) => Ok((bytes, subtype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -275,9 +255,9 @@ pub struct CodeSignBlobIndex {
 }
 
 impl CodeSignBlobIndex {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignBlobIndex> {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignBlobIndex> {
         let (bytes, type_) = CodeSignSlot::parse(bytes)?;
-        let (bytes, offset) = nom::number::complete::be_u32(bytes)?;
+        let (bytes, offset) = be_u32(bytes)?;
         Ok((bytes, CodeSignBlobIndex { type_, offset }))
     }
 }
@@ -289,9 +269,9 @@ pub struct CodeSignGenericBlob {
 }
 
 impl CodeSignGenericBlob {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignGenericBlob> {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignGenericBlob> {
         let (bytes, magic) = CodeSignMagic::parse(bytes)?;
-        let (bytes, length) = nom::number::complete::be_u32(bytes)?;
+        let (bytes, length) = be_u32(bytes)?;
 
         Ok((bytes, CodeSignGenericBlob { magic, length }))
     }
@@ -306,10 +286,10 @@ pub struct CodeSignSuperBlob {
 }
 
 impl CodeSignSuperBlob {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignSuperBlob> {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignSuperBlob> {
         let (bytes, magic) = CodeSignMagic::parse(bytes)?;
-        let (bytes, length) = nom::number::complete::be_u32(bytes)?;
-        let (bytes, count) = nom::number::complete::be_u32(bytes)?;
+        let (bytes, length) = be_u32(bytes)?;
+        let (bytes, count) = be_u32(bytes)?;
         let mut blobs = Vec::with_capacity(count as usize);
         let mut bytes = bytes;
         for _ in 0..count {
@@ -338,29 +318,25 @@ pub enum CodeSignHash {
 }
 
 impl CodeSignHash {
-    pub fn parse(bytes: &[u8], hash_type: CodeSignHashType) -> nom::IResult<&[u8], CodeSignHash> {
+    pub fn parse(bytes: &[u8], hash_type: CodeSignHashType) -> IResult<&[u8], CodeSignHash> {
         match hash_type {
             CodeSignHashType::SHA1 => {
-                let (bytes, hash) =
-                    nom::multi::count(nom::number::complete::be_u8, 20).parse(bytes)?;
+                let (bytes, hash) = multi::count(be_u8, 20).parse(bytes)?;
                 Ok((bytes, CodeSignHash::SHA1(hash.try_into().unwrap())))
             }
             CodeSignHashType::SHA256 => {
-                let (bytes, hash) =
-                    nom::multi::count(nom::number::complete::be_u8, 32).parse(bytes)?;
+                let (bytes, hash) = multi::count(be_u8, 32).parse(bytes)?;
                 Ok((bytes, CodeSignHash::SHA256(hash.try_into().unwrap())))
             }
             CodeSignHashType::SHA256Truncated => {
-                let (bytes, hash) =
-                    nom::multi::count(nom::number::complete::be_u8, 20).parse(bytes)?;
+                let (bytes, hash) = multi::count(be_u8, 20).parse(bytes)?;
                 Ok((
                     bytes,
                     CodeSignHash::SHA256Truncated(hash.try_into().unwrap()),
                 ))
             }
             CodeSignHashType::SHA384 => {
-                let (bytes, hash) =
-                    nom::multi::count(nom::number::complete::be_u8, 48).parse(bytes)?;
+                let (bytes, hash) = multi::count(be_u8, 48).parse(bytes)?;
                 Ok((bytes, CodeSignHash::SHA384(hash.try_into().unwrap())))
             }
             _ => unimplemented!(),
@@ -389,23 +365,23 @@ pub struct CodeSignCodeDirectory {
 }
 
 impl CodeSignCodeDirectory {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignCodeDirectory> {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignCodeDirectory> {
         let cursor = bytes;
         let (cursor, generic) = CodeSignGenericBlob::parse(cursor)?;
         let (cursor, version) = CodeSignSupports::parse(cursor)?;
-        let (cursor, flags) = nom::number::complete::be_u32(cursor)?;
+        let (cursor, flags) = be_u32(cursor)?;
         let flags = CodeSignAttrs::from_bits_truncate(flags);
-        let (cursor, hash_offset) = nom::number::complete::be_u32(cursor)?;
-        let (cursor, ident_offset) = nom::number::complete::be_u32(cursor)?;
+        let (cursor, hash_offset) = be_u32(cursor)?;
+        let (cursor, ident_offset) = be_u32(cursor)?;
 
-        let (cursor, n_special_slots) = nom::number::complete::be_u32(cursor)?;
-        let (cursor, n_code_slots) = nom::number::complete::be_u32(cursor)?;
-        let (cursor, code_limit) = nom::number::complete::be_u32(cursor)?;
-        let (cursor, hash_size) = nom::number::complete::be_u8(cursor)?;
+        let (cursor, n_special_slots) = be_u32(cursor)?;
+        let (cursor, n_code_slots) = be_u32(cursor)?;
+        let (cursor, code_limit) = be_u32(cursor)?;
+        let (cursor, hash_size) = be_u8(cursor)?;
         let (cursor, hash_type) = CodeSignHashType::parse(cursor)?;
-        let (cursor, platform) = nom::number::complete::be_u8(cursor)?;
-        let (cursor, page_size) = nom::number::complete::be_u8(cursor)?;
-        let (_, spare2) = nom::number::complete::be_u32(cursor)?;
+        let (cursor, platform) = be_u8(cursor)?;
+        let (cursor, page_size) = be_u8(cursor)?;
+        let (_, spare2) = be_u32(cursor)?;
 
         let hashes = (-(n_special_slots as i32)..n_code_slots as i32)
             .map(|i| {
@@ -457,7 +433,7 @@ pub struct CodeSignEntitlements {
 }
 
 impl CodeSignEntitlements {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignEntitlements> {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignEntitlements> {
         let (bytes, generic) = CodeSignGenericBlob::parse(bytes)?;
         let entitlements =
             String::from_utf8(bytes[..generic.length as usize - 8 as usize].to_vec()).unwrap();
@@ -485,7 +461,7 @@ pub struct CodeSignDerEntitlements {
 //     pub cms: SignedData,
 // }
 // impl CodeSignSignature {
-//     pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CodeSignSignature> {
+//     pub fn parse(bytes: &[u8]) -> IResult<&[u8], CodeSignSignature> {
 //         let (bytes, generic) = CodeSignGenericBlob::parse(bytes)?;
 //         // Apple uses indefinite field lengths from the BER spec to encode some fields here. The
 //         // CMS crate doesn't support this encoding type but cryptographic-message-syntax does.
@@ -514,7 +490,7 @@ pub struct CodeSignCommand<A> {
 
 impl<'a> ParseRaw<'a> for CodeSignCommand<Raw> {
     fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
-        let (cursor, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+        let (cursor, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
 
         Ok((
             cursor,
@@ -534,8 +510,8 @@ impl<'a, T: Seek + Read> ParseResolved<'a, T> for CodeSignCommand<Resolved> {
         ldcmd: &'a [u8],
         _: MachHeader,
         _: &Vec<LoadCommand<Resolved>>,
-    ) -> nom::IResult<&'a [u8], Self> {
-        let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
+    ) -> IResult<&'a [u8], Self> {
+        let (bytes, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
         let mut cs = vec![0u8; cmd.datasize as usize];
         buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
         buf.read_exact(&mut cs).unwrap();

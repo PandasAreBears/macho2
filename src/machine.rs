@@ -1,4 +1,11 @@
-use nom::Parser;
+use nom::{
+    error::{Error, ErrorKind},
+    multi,
+    number::complete::{be_u32, le_u32, le_u64},
+    sequence,
+    Err::Failure,
+    IResult, Parser,
+};
 use num_derive::FromPrimitive;
 use strum_macros::Display;
 
@@ -34,16 +41,16 @@ pub enum CpuType {
 }
 
 impl CpuType {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CpuType> {
-        let (bytes, cputype) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CpuType> {
+        let (bytes, cputype) = le_u32(bytes)?;
         match num::FromPrimitive::from_u32(cputype) {
             Some(cputype) => Ok((bytes, cputype)),
             None => Ok((bytes, CpuType::Unknown)),
         }
     }
 
-    pub fn parse_be(bytes: &[u8]) -> nom::IResult<&[u8], CpuType> {
-        let (bytes, cputype) = nom::number::complete::be_u32(bytes)?;
+    pub fn parse_be(bytes: &[u8]) -> IResult<&[u8], CpuType> {
+        let (bytes, cputype) = be_u32(bytes)?;
         match num::FromPrimitive::from_u32(cputype) {
             Some(cputype) => Ok((bytes, cputype)),
             None => Ok((bytes, CpuType::Unknown)),
@@ -65,7 +72,7 @@ impl CpuSubType {
     pub const CPU_SUBTYPE_LIB64: u32 = 0x80000000;
     pub const CPU_SUBTYPE_PTRAUTH_ABI: u32 = 0x80000000;
 
-    pub fn parse(bytes: &[u8], cpu: CpuType) -> nom::IResult<&[u8], CpuSubType> {
+    pub fn parse(bytes: &[u8], cpu: CpuType) -> IResult<&[u8], CpuSubType> {
         match cpu {
             CpuType::I386 => {
                 let (bytes, cpusubtype) = CpuSubTypeI386::parse(bytes)?;
@@ -87,7 +94,7 @@ impl CpuSubType {
         }
     }
 
-    pub fn parse_be(bytes: &[u8], cpu: CpuType) -> nom::IResult<&[u8], CpuSubType> {
+    pub fn parse_be(bytes: &[u8], cpu: CpuType) -> IResult<&[u8], CpuSubType> {
         match cpu {
             CpuType::I386 => {
                 let (bytes, cpusubtype) = CpuSubTypeI386::parse_be(bytes)?;
@@ -134,25 +141,19 @@ pub enum CpuSubTypeI386 {
 }
 
 impl CpuSubTypeI386 {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CpuSubTypeI386> {
-        let (bytes, cpusubtype) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CpuSubTypeI386> {
+        let (bytes, cpusubtype) = le_u32(bytes)?;
         match num::FromPrimitive::from_u32(cpusubtype & (!CpuSubType::CPU_SUBTYPE_MASK)) {
             Some(cpusubtype) => Ok((bytes, cpusubtype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 
-    pub fn parse_be(bytes: &[u8]) -> nom::IResult<&[u8], CpuSubTypeI386> {
-        let (bytes, cpusubtype) = nom::number::complete::be_u32(bytes)?;
+    pub fn parse_be(bytes: &[u8]) -> IResult<&[u8], CpuSubTypeI386> {
+        let (bytes, cpusubtype) = be_u32(bytes)?;
         match num::FromPrimitive::from_u32(cpusubtype & (!CpuSubType::CPU_SUBTYPE_MASK)) {
             Some(cpusubtype) => Ok((bytes, cpusubtype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -165,25 +166,19 @@ pub enum CpuSubTypeX86 {
 }
 
 impl CpuSubTypeX86 {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CpuSubTypeX86> {
-        let (bytes, cpusubtype) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CpuSubTypeX86> {
+        let (bytes, cpusubtype) = le_u32(bytes)?;
         match num::FromPrimitive::from_u32(cpusubtype & (!CpuSubType::CPU_SUBTYPE_MASK)) {
             Some(cpusubtype) => Ok((bytes, cpusubtype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 
-    pub fn parse_be(bytes: &[u8]) -> nom::IResult<&[u8], CpuSubTypeX86> {
-        let (bytes, cpusubtype) = nom::number::complete::be_u32(bytes)?;
+    pub fn parse_be(bytes: &[u8]) -> IResult<&[u8], CpuSubTypeX86> {
+        let (bytes, cpusubtype) = be_u32(bytes)?;
         match num::FromPrimitive::from_u32(cpusubtype & (!CpuSubType::CPU_SUBTYPE_MASK)) {
             Some(cpusubtype) => Ok((bytes, cpusubtype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -207,25 +202,19 @@ pub enum CpuSubTypeArm {
 }
 
 impl CpuSubTypeArm {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CpuSubTypeArm> {
-        let (bytes, cpusubtype) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CpuSubTypeArm> {
+        let (bytes, cpusubtype) = le_u32(bytes)?;
         match num::FromPrimitive::from_u32(cpusubtype & (!CpuSubType::CPU_SUBTYPE_MASK)) {
             Some(cpusubtype) => Ok((bytes, cpusubtype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 
-    pub fn parse_be(bytes: &[u8]) -> nom::IResult<&[u8], CpuSubTypeArm> {
-        let (bytes, cpusubtype) = nom::number::complete::be_u32(bytes)?;
+    pub fn parse_be(bytes: &[u8]) -> IResult<&[u8], CpuSubTypeArm> {
+        let (bytes, cpusubtype) = be_u32(bytes)?;
         match num::FromPrimitive::from_u32(cpusubtype & (!CpuSubType::CPU_SUBTYPE_MASK)) {
             Some(cpusubtype) => Ok((bytes, cpusubtype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -240,25 +229,19 @@ pub enum CpuSubTypeArm64 {
 impl CpuSubTypeArm64 {
     pub const ARM64_PTR_AUTH_MASK: u32 = 0x0f000000;
 
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], CpuSubTypeArm64> {
-        let (bytes, cpusubtype) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], CpuSubTypeArm64> {
+        let (bytes, cpusubtype) = le_u32(bytes)?;
         match num::FromPrimitive::from_u32(cpusubtype & (!CpuSubType::CPU_SUBTYPE_MASK)) {
             Some(cpusubtype) => Ok((bytes, cpusubtype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 
-    pub fn parse_be(bytes: &[u8]) -> nom::IResult<&[u8], CpuSubTypeArm64> {
-        let (bytes, cpusubtype) = nom::number::complete::be_u32(bytes)?;
+    pub fn parse_be(bytes: &[u8]) -> IResult<&[u8], CpuSubTypeArm64> {
+        let (bytes, cpusubtype) = be_u32(bytes)?;
         match num::FromPrimitive::from_u32(cpusubtype & (!CpuSubType::CPU_SUBTYPE_MASK)) {
             Some(cpusubtype) => Ok((bytes, cpusubtype)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -270,7 +253,7 @@ pub enum ThreadStateFlavor {
 }
 
 impl ThreadStateFlavor {
-    pub fn parse(bytes: &[u8], cpu: CpuType) -> nom::IResult<&[u8], ThreadStateFlavor> {
+    pub fn parse(bytes: &[u8], cpu: CpuType) -> IResult<&[u8], ThreadStateFlavor> {
         match cpu {
             CpuType::X86_64 => {
                 let (bytes, flavor) = ThreadStateX86Flavor::parse(bytes)?;
@@ -280,10 +263,7 @@ impl ThreadStateFlavor {
                 let (bytes, flavor) = ThreadStateArm64Flavor::parse(bytes)?;
                 Ok((bytes, ThreadStateFlavor::Arm64Flavor(flavor)))
             }
-            _ => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            _ => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -295,7 +275,7 @@ pub enum ThreadState {
 }
 
 impl ThreadState {
-    pub fn parse(bytes: &[u8], base: ThreadStateBase) -> nom::IResult<&[u8], ThreadState> {
+    pub fn parse(bytes: &[u8], base: ThreadStateBase) -> IResult<&[u8], ThreadState> {
         match base.flavor {
             ThreadStateFlavor::X86Flavor(flavor) => {
                 let (bytes, state) = X86ThreadState::parse(bytes, flavor)?;
@@ -315,9 +295,9 @@ pub struct ThreadStateBase {
 }
 
 impl ThreadStateBase {
-    pub fn parse(bytes: &[u8], cpu: CpuType) -> nom::IResult<&[u8], ThreadStateBase> {
+    pub fn parse(bytes: &[u8], cpu: CpuType) -> IResult<&[u8], ThreadStateBase> {
         let (bytes, flavor) = ThreadStateFlavor::parse(bytes, cpu)?;
-        let (bytes, count) = nom::number::complete::le_u32(bytes)?;
+        let (bytes, count) = le_u32(bytes)?;
 
         Ok((bytes, ThreadStateBase { flavor, count }))
     }
@@ -329,14 +309,11 @@ pub enum ThreadStateX86Flavor {
 }
 
 impl ThreadStateX86Flavor {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], ThreadStateX86Flavor> {
-        let (bytes, flavor) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], ThreadStateX86Flavor> {
+        let (bytes, flavor) = le_u32(bytes)?;
         match num::FromPrimitive::from_u32(flavor) {
             Some(flavor) => Ok((bytes, flavor)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -347,10 +324,7 @@ pub enum X86ThreadState {
 }
 
 impl X86ThreadState {
-    pub fn parse(
-        bytes: &[u8],
-        flavor: ThreadStateX86Flavor,
-    ) -> nom::IResult<&[u8], X86ThreadState> {
+    pub fn parse(bytes: &[u8], flavor: ThreadStateX86Flavor) -> IResult<&[u8], X86ThreadState> {
         match flavor {
             ThreadStateX86Flavor::X86ThreadState64 => {
                 let (bytes, state) = X86ThreadState64::parse(bytes)?;
@@ -386,28 +360,36 @@ pub struct X86ThreadState64 {
 }
 
 impl X86ThreadState64 {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], X86ThreadState64> {
-        let (bytes, rax) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, rbx) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, rcx) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, rdx) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, rdi) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, rsi) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, rbp) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, rsp) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, r8) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, r9) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, r10) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, r11) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, r12) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, r13) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, r14) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, r15) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, rip) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, rflags) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, cs) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, fs) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, gs) = nom::number::complete::le_u64(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], X86ThreadState64> {
+        let (
+            bytes,
+            (
+                rax,
+                rbx,
+                rcx,
+                rdx,
+                rdi,
+                rsi,
+                rbp,
+                rsp,
+                r8,
+                r9,
+                r10,
+                r11,
+                r12,
+                r13,
+                r14,
+                r15,
+                rip,
+                rflags,
+                cs,
+                fs,
+                gs,
+            ),
+        ) = sequence::tuple((
+            le_u64, le_u64, le_u64, le_u64, le_u64, le_u64, le_u64, le_u64, le_u64, le_u64, le_u64,
+            le_u64, le_u64, le_u64, le_u64, le_u64, le_u64, le_u64, le_u64, le_u64, le_u64,
+        ))(bytes)?;
 
         Ok((
             bytes,
@@ -444,14 +426,11 @@ pub enum ThreadStateArm64Flavor {
 }
 
 impl ThreadStateArm64Flavor {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], ThreadStateArm64Flavor> {
-        let (bytes, flavor) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], ThreadStateArm64Flavor> {
+        let (bytes, flavor) = le_u32(bytes)?;
         match num::FromPrimitive::from_u32(flavor) {
             Some(flavor) => Ok((bytes, flavor)),
-            None => Err(nom::Err::Failure(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::Tag,
-            ))),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
@@ -462,10 +441,7 @@ pub enum Arm64ThreadState {
 }
 
 impl Arm64ThreadState {
-    pub fn parse(
-        bytes: &[u8],
-        flavor: ThreadStateArm64Flavor,
-    ) -> nom::IResult<&[u8], Arm64ThreadState> {
+    pub fn parse(bytes: &[u8], flavor: ThreadStateArm64Flavor) -> IResult<&[u8], Arm64ThreadState> {
         match flavor {
             ThreadStateArm64Flavor::Arm64ThreadState64 => {
                 let (bytes, state) = Arm64ThreadState64::parse(bytes)?;
@@ -486,14 +462,14 @@ pub struct Arm64ThreadState64 {
 }
 
 impl Arm64ThreadState64 {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], Arm64ThreadState64> {
-        let (bytes, x_vec) = nom::multi::count(nom::number::complete::le_u64, 29).parse(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], Arm64ThreadState64> {
+        let (bytes, x_vec) = multi::count(le_u64, 29).parse(bytes)?;
         let x: [u64; 29] = x_vec.try_into().unwrap();
-        let (bytes, fp) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, lr) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, sp) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, pc) = nom::number::complete::le_u64(bytes)?;
-        let (bytes, cpsr) = nom::number::complete::le_u64(bytes)?;
+        let (bytes, fp) = le_u64(bytes)?;
+        let (bytes, lr) = le_u64(bytes)?;
+        let (bytes, sp) = le_u64(bytes)?;
+        let (bytes, pc) = le_u64(bytes)?;
+        let (bytes, cpsr) = le_u64(bytes)?;
 
         Ok((
             bytes,

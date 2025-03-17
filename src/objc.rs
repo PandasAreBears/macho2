@@ -1,5 +1,6 @@
 use bitflags::bitflags;
 use lazy_static::lazy_static;
+use nom::number::complete::le_u32;
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
@@ -58,8 +59,8 @@ impl ObjCImageInfo {
             .unwrap();
         macho.buf.read_exact(&mut info).unwrap();
 
-        let (_, version) = nom::number::complete::le_u32::<_, ()>(&info[0..4]).unwrap();
-        let (_, flags) = nom::number::complete::le_u32::<_, ()>(&info[4..8]).unwrap();
+        let (_, version) = le_u32::<_, ()>(&info[0..4]).unwrap();
+        let (_, flags) = le_u32::<_, ()>(&info[4..8]).unwrap();
         let swift_stable_version = (flags & Self::SWIFT_STABLE_VERSION_MASK) >> 16;
         let swift_unstable_version = (flags & Self::SWIFT_UNSTABLE_VERSION_MASK) >> 8;
         let flags = ObjCImageInfoFlags::from_bits_truncate(flags);

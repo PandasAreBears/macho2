@@ -1,6 +1,6 @@
 use std::io::{Read, Seek, SeekFrom};
 
-use nom::{sequence::tuple, IResult};
+use nom::{number::complete::le_u32, sequence::tuple, IResult};
 use nom_derive::{Nom, Parse};
 
 use crate::{
@@ -54,8 +54,8 @@ bitflags::bitflags! {
 }
 
 impl MHFlags {
-    pub fn parse(bytes: &[u8]) -> nom::IResult<&[u8], MHFlags> {
-        let (bytes, flags) = nom::number::complete::le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], MHFlags> {
+        let (bytes, flags) = le_u32(bytes)?;
         Ok((bytes, MHFlags::from_bits_truncate(flags)))
     }
 }
@@ -99,8 +99,8 @@ impl MachHeader32 {
         let (bytes, (cpusubtype, filetype, ncmds, sizeofcmds, flags)) = tuple((
             |input| CpuSubType::parse(input, cputype),
             MHFileType::parse_le,
-            nom::number::complete::le_u32,
-            nom::number::complete::le_u32,
+            le_u32,
+            le_u32,
             MHFlags::parse,
         ))(bytes)?;
 
@@ -138,10 +138,10 @@ impl MachHeader64 {
         let (bytes, (magic, cputype)) = tuple((MHMagic::parse_le, CpuType::parse))(bytes)?;
         let (bytes, cpusubtype) = CpuSubType::parse(bytes, cputype)?;
         let (bytes, filetype) = MHFileType::parse_le(bytes)?;
-        let (bytes, ncmds) = nom::number::complete::le_u32(bytes)?;
-        let (bytes, sizeofcmds) = nom::number::complete::le_u32(bytes)?;
+        let (bytes, ncmds) = le_u32(bytes)?;
+        let (bytes, sizeofcmds) = le_u32(bytes)?;
         let (bytes, flags) = MHFlags::parse(bytes)?;
-        let (bytes, reserved) = nom::number::complete::le_u32(bytes)?;
+        let (bytes, reserved) = le_u32(bytes)?;
 
         Ok((
             bytes,
