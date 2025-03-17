@@ -52,7 +52,7 @@ fn main() -> MachOResult<()> {
             .unwrap();
         print_objc(&mut macho);
     } else if MachO::<_, Resolved>::is_macho_magic(&mut file)? {
-        let mut macho = MachO::parse(file).unwrap();
+        let mut macho = MachO::<_, Resolved>::parse(file).unwrap();
         print_objc(&mut macho);
     } else {
         return Err(MachOErr {

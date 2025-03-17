@@ -6,7 +6,7 @@ use crate::{
     header::MachHeader,
     helpers::string_upto_null_terminator,
     load_command::{LCLoadCommand, LoadCommandBase},
-    macho::LoadCommand,
+    macho::LoadCommandResolved,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
@@ -179,7 +179,7 @@ impl SymtabCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, symoff) = nom::number::complete::le_u32(cursor)?;
@@ -259,7 +259,7 @@ impl DysymtabCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        prev_cmds: &Vec<LoadCommand>,
+        prev_cmds: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, ilocalsym) = nom::number::complete::le_u32(cursor)?;
@@ -284,7 +284,7 @@ impl DysymtabCommand {
         let symtab = prev_cmds
             .iter()
             .find_map(|cmd| {
-                if let LoadCommand::Symtab(symtab) = cmd {
+                if let LoadCommandResolved::Symtab(symtab) = cmd {
                     Some(symtab)
                 } else {
                     None

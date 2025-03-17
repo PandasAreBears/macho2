@@ -9,7 +9,7 @@ use crate::{
     helpers::{read_uleb_many, string_upto_null_terminator, version_string},
     load_command::{LCLoadCommand, LoadCommandBase},
     machine::{ThreadState, ThreadStateBase},
-    macho::LoadCommand,
+    macho::LoadCommandResolved,
 };
 
 #[repr(u32)]
@@ -63,7 +63,7 @@ impl SymsegCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, offset) = nom::number::complete::le_u32(cursor)?;
@@ -94,7 +94,7 @@ impl ThreadCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         header: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let end = &ldcmd[base.cmdsize as usize..];
         let (mut cursor, _) = LoadCommandBase::skip(ldcmd)?;
@@ -137,7 +137,7 @@ impl RoutinesCommand64 {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, init_address) = nom::number::complete::le_u64(cursor)?;
@@ -181,7 +181,7 @@ impl TwoLevelHintsCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, offset) = nom::number::complete::le_u32(cursor)?;
@@ -212,7 +212,7 @@ impl PrebindCksumCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, cksum) = nom::number::complete::le_u32(cursor)?;
@@ -241,7 +241,7 @@ impl UuidCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, uuid) = nom::number::complete::le_u128(cursor)?;
@@ -270,7 +270,7 @@ impl RpathCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (_, path_offset) = nom::number::complete::le_u32(cursor)?;
@@ -335,7 +335,7 @@ impl FunctionStartsCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (bytes, linkeditcmd) = LinkeditDataCommand::parse(ldcmd, base)?;
         let mut funcs_blob = vec![0u8; linkeditcmd.datasize as usize];
@@ -386,7 +386,7 @@ impl EncryptionInfoCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, cryptoff) = nom::number::complete::le_u32(cursor)?;
@@ -422,7 +422,7 @@ impl EncryptionInfoCommand64 {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, cryptoff) = nom::number::complete::le_u32(cursor)?;
@@ -458,7 +458,7 @@ impl VersionMinCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, version) = nom::number::complete::le_u32(cursor)?;
@@ -514,7 +514,7 @@ impl BuildVersionCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, platform) = Platform::parse_le(cursor)?;
@@ -562,7 +562,7 @@ impl LinkerOptionCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (mut cursor, _) = LoadCommandBase::skip(&ldcmd)?;
         let (_, count) = nom::number::complete::le_u32(cursor)?;
@@ -600,7 +600,7 @@ impl EntryPointCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, entryoff) = nom::number::complete::le_u64(cursor)?;
@@ -631,7 +631,7 @@ impl SourceVersionCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, version) = nom::number::complete::le_u64(cursor)?;
@@ -669,7 +669,7 @@ impl NoteCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, data_owner_offset) = nom::number::complete::le_u32(cursor)?;
@@ -708,7 +708,7 @@ impl FilesetEntryCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, vmaddr) = nom::number::complete::le_u64(cursor)?;

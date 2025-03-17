@@ -6,7 +6,7 @@ use num_derive::FromPrimitive;
 
 use crate::{
     commands::LinkeditDataCommand, header::MachHeader, helpers::string_upto_null_terminator,
-    load_command::LoadCommandBase, macho::LoadCommand,
+    load_command::LoadCommandBase, macho::LoadCommandResolved,
 };
 
 bitflags::bitflags! {
@@ -511,7 +511,7 @@ impl CodeSignCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
         let mut cs = vec![0u8; cmd.datasize as usize];

@@ -4,7 +4,7 @@ use crate::{
     header::MachHeader,
     helpers::{string_upto_null_terminator, version_string},
     load_command::{LCLoadCommand, LoadCommandBase},
-    macho::LoadCommand,
+    macho::LoadCommandResolved,
 };
 
 bitflags::bitflags! {
@@ -41,7 +41,7 @@ impl DylibCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
@@ -87,7 +87,7 @@ impl DylibUseCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
@@ -127,7 +127,7 @@ impl SubFrameworkCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
@@ -158,7 +158,7 @@ impl SubClientCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
@@ -189,7 +189,7 @@ impl SubUmbrellaCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
@@ -221,7 +221,7 @@ impl SubLibraryCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
@@ -255,7 +255,7 @@ impl PreboundDylibCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
@@ -297,7 +297,7 @@ impl DylinkerCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommand>,
+        _: &Vec<LoadCommandResolved>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
 
