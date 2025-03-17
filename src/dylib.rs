@@ -5,8 +5,7 @@ use nom::{number::complete::le_u32, sequence, IResult};
 use crate::{
     header::MachHeader,
     helpers::{string_upto_null_terminator, version_string},
-    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase, ParseRegular},
-    macho::Resolved,
+    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase, ParseRegular, Resolved},
 };
 
 bitflags::bitflags! {

@@ -7,16 +7,10 @@ use crate::file_subset::FileSubset;
 use crate::fixups::DyldFixup;
 use crate::header::{MHMagic, MachHeader};
 
-use crate::load_command::LoadCommand;
+use crate::load_command::{LoadCommand, Raw, Resolved};
 use crate::machine;
 use crate::segment::SegmentCommand64;
 use std::fmt;
-
-/// ZSTs to define the load command parsing behaviour.
-#[derive(Debug)]
-pub struct Raw;
-#[derive(Debug)]
-pub struct Resolved;
 
 #[derive(Debug)]
 pub struct MachOErr {

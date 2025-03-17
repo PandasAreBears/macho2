@@ -15,10 +15,10 @@ use crate::{
     header::MachHeader,
     helpers::{read_uleb_many, string_upto_null_terminator, version_string},
     load_command::{
-        LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseRegular, ParseResolved,
+        LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseRegular, ParseResolved, Raw,
+        Resolved,
     },
     machine::{ThreadState, ThreadStateBase},
-    macho::{Raw, Resolved},
 };
 
 #[repr(u32)]

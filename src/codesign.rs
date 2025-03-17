@@ -17,8 +17,7 @@ use num_derive::FromPrimitive;
 use crate::{
     commands::LinkeditDataCommand,
     helpers::string_upto_null_terminator,
-    load_command::{LoadCommand, LoadCommandBase, ParseRaw, ParseResolved},
-    macho::{Raw, Resolved},
+    load_command::{LoadCommand, LoadCommandBase, ParseRaw, ParseResolved, Raw, Resolved},
 };
 
 bitflags::bitflags! {

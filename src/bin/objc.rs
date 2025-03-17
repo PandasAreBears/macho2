@@ -5,7 +5,8 @@ use std::{
 };
 
 use macho2::{
-    macho::{FatMachO, MachO, MachOErr, MachOResult, Resolved},
+    load_command::Resolved,
+    macho::{FatMachO, MachO, MachOErr, MachOResult},
     objc::ObjCInfo,
 };
 fn main() -> MachOResult<()> {

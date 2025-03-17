@@ -1,4 +1,7 @@
-use macho2::macho::{FatMachO, MachO, MachOErr, MachOResult, Raw};
+use macho2::{
+    load_command::Raw,
+    macho::{FatMachO, MachO, MachOErr, MachOResult},
+};
 use std::{
     env,
     fs::File,

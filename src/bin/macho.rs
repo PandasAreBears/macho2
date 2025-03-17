@@ -1,7 +1,7 @@
 use macho2::{
     header::MachHeader,
-    load_command::LoadCommand,
-    macho::{FatMachO, MachO, MachOErr, MachOResult, Resolved},
+    load_command::{LoadCommand, Resolved},
+    macho::{FatMachO, MachO, MachOErr, MachOResult},
     segment::Protection,
 };
 use std::{

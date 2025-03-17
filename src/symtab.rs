@@ -14,8 +14,9 @@ use num_derive::FromPrimitive;
 
 use crate::{
     helpers::string_upto_null_terminator,
-    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved},
-    macho::{Raw, Resolved},
+    load_command::{
+        LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved, Raw, Resolved,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]

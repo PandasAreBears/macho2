@@ -6,8 +6,7 @@ use num_derive::FromPrimitive;
 
 use crate::{
     dyldinfo::{DyldChainedImport, DyldPointerFormat, DyldStartsInSegment},
-    load_command::LoadCommand,
-    macho::Resolved,
+    load_command::{LoadCommand, Resolved},
 };
 
 #[derive(Debug, FromPrimitive, Clone)]

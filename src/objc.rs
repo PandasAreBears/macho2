@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 
 use num_derive::FromPrimitive;
 
-use crate::load_command::LoadCommand;
-use crate::macho::{ImageValue, MachO, MachOErr, MachOResult, Resolved};
+use crate::load_command::{LoadCommand, Resolved};
+use crate::macho::{ImageValue, MachO, MachOErr, MachOResult};
 
 bitflags::bitflags! {
     #[derive(Debug)]

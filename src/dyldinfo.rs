@@ -19,8 +19,9 @@ use crate::{
     commands::LinkeditDataCommand,
     fixups::DyldFixup,
     helpers::{read_sleb, read_uleb, string_upto_null_terminator},
-    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved},
-    macho::{Raw, Resolved},
+    load_command::{
+        LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved, Raw, Resolved,
+    },
 };
 
 #[derive(Debug, FromPrimitive, Clone, Copy)]

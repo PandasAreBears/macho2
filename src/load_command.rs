@@ -12,15 +12,21 @@ use crate::dylib::{
     DylibCommand, DylinkerCommand, PreboundDylibCommand, SubClientCommand, SubFrameworkCommand,
     SubLibraryCommand, SubUmbrellaCommand,
 };
-use crate::macho::{MachOErr, MachOResult, Raw};
+use crate::macho::{MachOErr, MachOResult};
 use crate::segment::{SegmentCommand32, SegmentCommand64};
 use crate::symtab::{DysymtabCommand, SymtabCommand};
 
 use nom::{bytes::complete::take, number::complete::le_u32, IResult};
 use nom_derive::{Nom, Parse};
 
-use crate::{header::MachHeader, macho::Resolved};
+use crate::header::MachHeader;
 
+/// ZSTs to define the load command parsing behaviour.
+#[derive(Debug)]
+pub struct Raw;
+#[derive(Debug)]
+
+pub struct Resolved;
 pub trait ParseResolved<'a, T: Seek + Read> {
     fn parse(
         buf: &mut T,
