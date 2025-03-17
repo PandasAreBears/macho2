@@ -7,7 +7,7 @@ use crate::file_subset::FileSubset;
 use crate::fixups::DyldFixup;
 use crate::header::{MHMagic, MachHeader};
 
-use crate::load_command::{LoadCommandBase, LoadCommandResolved};
+use crate::load_command::{LoadCommand, LoadCommandBase};
 use crate::machine;
 use crate::segment::SegmentCommand64;
 use std::fmt;
@@ -54,7 +54,7 @@ impl ImageValue {
 pub struct MachO<T: Seek + Read, A> {
     pub header: MachHeader,
     pub buf: T,
-    resolved: Option<Vec<LoadCommandResolved>>,
+    resolved: Option<Vec<LoadCommand<A>>>,
     raw: Option<Vec<LoadCommandBase>>,
     segs: Vec<SegmentCommand64>,
     phantom: PhantomData<A>,
@@ -77,18 +77,18 @@ impl<T: Seek + Read> MachO<T, Raw> {
 }
 
 impl<T: Seek + Read> MachO<T, Resolved> {
-    pub fn load_commands(&self) -> &Vec<LoadCommandResolved> {
+    pub fn load_commands(&self) -> &Vec<LoadCommand<Resolved>> {
         self.resolved.as_ref().unwrap()
     }
 
     pub fn parse(mut buf: T) -> MachOResult<Self> {
         let header = MachHeader::parse(&mut buf)?;
-        let load_commands = LoadCommandResolved::parse_all(&mut buf, header)?;
+        let load_commands = LoadCommand::parse_all(&mut buf, header)?;
 
         let segs: Vec<SegmentCommand64> = load_commands
             .iter()
             .filter_map(|lc| match lc {
-                LoadCommandResolved::Segment64(cmd) => Some(cmd),
+                LoadCommand::Segment64(cmd) => Some(cmd),
                 _ => None,
             })
             .cloned()
@@ -118,7 +118,7 @@ impl<T: Seek + Read> MachO<T, Resolved> {
             .load_commands()
             .iter()
             .filter_map(|lc| match lc {
-                LoadCommandResolved::DyldChainedFixups(cmd) => {
+                LoadCommand::DyldChainedFixups(cmd) => {
                     cmd.fixups.iter().find(|fixup| fixup.offset == offset)
                 }
                 _ => None,

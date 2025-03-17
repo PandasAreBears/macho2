@@ -1,12 +1,16 @@
-use std::io::{Read, Seek};
+use std::{
+    io::{Read, Seek},
+    marker::PhantomData,
+};
 
+use nom::{number::complete::le_u32, IResult};
 use num_derive::FromPrimitive;
 
 use crate::{
     header::MachHeader,
     helpers::string_upto_null_terminator,
-    load_command::LoadCommandResolved,
-    load_command::{LCLoadCommand, LoadCommandBase},
+    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase},
+    macho::{Raw, Resolved},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
@@ -179,7 +183,7 @@ impl SymtabCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommandResolved>,
+        _: &Vec<LoadCommand<Resolved>>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, symoff) = nom::number::complete::le_u32(cursor)?;
@@ -222,7 +226,7 @@ impl SymtabCommand {
 }
 
 #[derive(Debug)]
-pub struct DysymtabCommand {
+pub struct DysymtabCommand<A> {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
     pub ilocalsym: u32,
@@ -244,47 +248,123 @@ pub struct DysymtabCommand {
     pub locreloff: u32,
     pub nlocrel: u32,
 
-    pub locals: Vec<Nlist64>,
-    pub extdefs: Vec<Nlist64>,
-    pub undefs: Vec<Nlist64>,
-    pub indirect: Vec<Nlist64>,
-}
+    pub locals: Option<Vec<Nlist64>>,
+    pub extdefs: Option<Vec<Nlist64>>,
+    pub undefs: Option<Vec<Nlist64>>,
+    pub indirect: Option<Vec<Nlist64>>,
 
-impl DysymtabCommand {
+    phantom: PhantomData<A>,
+}
+impl<A> DysymtabCommand<A> {
     pub const INDIRECT_SYMBOL_LOCAL: u32 = 0x80000000;
     pub const INDIRECT_SYMBOL_ABS: u32 = 0x40000000;
+}
 
+impl DysymtabCommand<Raw> {
+    pub fn parse<'a, T: Seek + Read>(
+        base: LoadCommandBase,
+        ldcmd: &'a [u8],
+    ) -> IResult<&'a [u8], Self> {
+        let (
+            cursor,
+            (
+                ilocalsym,
+                nlocalsym,
+                iextdefsym,
+                nextdefsym,
+                iundefsym,
+                nundefsym,
+                tocoff,
+                ntoc,
+                modtaboff,
+                nmodtab,
+                extrefsymoff,
+                nextrefsyms,
+                indirectsymoff,
+                nindirectsyms,
+                extreloff,
+                nextrel,
+                locreloff,
+                nlocrel,
+            ),
+        ) = nom::sequence::tuple((
+            le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
+            le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
+        ))(ldcmd)?;
+
+        Ok((
+            cursor,
+            DysymtabCommand {
+                cmd: base.cmd,
+                cmdsize: base.cmdsize,
+                ilocalsym,
+                nlocalsym,
+                iextdefsym,
+                nextdefsym,
+                iundefsym,
+                nundefsym,
+                tocoff,
+                ntoc,
+                modtaboff,
+                nmodtab,
+                extrefsymoff,
+                nextrefsyms,
+                indirectsymoff,
+                nindirectsyms,
+                extreloff,
+                nextrel,
+                locreloff,
+                nlocrel,
+                locals: None,
+                extdefs: None,
+                undefs: None,
+                indirect: None,
+                phantom: PhantomData,
+            },
+        ))
+    }
+}
+
+impl DysymtabCommand<Resolved> {
     pub fn parse<'a, T: Seek + Read>(
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        prev_cmds: &Vec<LoadCommandResolved>,
-    ) -> nom::IResult<&'a [u8], Self> {
+        prev_cmds: &Vec<LoadCommand<Resolved>>,
+    ) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
-        let (cursor, ilocalsym) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, nlocalsym) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, iextdefsym) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, nextdefsym) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, iundefsym) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, nundefsym) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, tocoff) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, ntoc) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, modtaboff) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, nmodtab) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, extrefsymoff) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, nextrefsyms) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, indirectsymoff) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, nindirectsyms) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, extreloff) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, nextrel) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, locreloff) = nom::number::complete::le_u32(cursor)?;
-        let (cursor, nlocrel) = nom::number::complete::le_u32(cursor)?;
+        let (
+            cursor,
+            (
+                ilocalsym,
+                nlocalsym,
+                iextdefsym,
+                nextdefsym,
+                iundefsym,
+                nundefsym,
+                tocoff,
+                ntoc,
+                modtaboff,
+                nmodtab,
+                extrefsymoff,
+                nextrefsyms,
+                indirectsymoff,
+                nindirectsyms,
+                extreloff,
+                nextrel,
+                locreloff,
+                nlocrel,
+            ),
+        ) = nom::sequence::tuple((
+            le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
+            le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
+        ))(cursor)?;
 
         let symtab = prev_cmds
             .iter()
             .find_map(|cmd| {
-                if let LoadCommandResolved::Symtab(symtab) = cmd {
+                if let LoadCommand::Symtab(symtab) = cmd {
                     Some(symtab)
                 } else {
                     None
@@ -292,20 +372,26 @@ impl DysymtabCommand {
             })
             .unwrap();
 
-        let locals = symtab.symbols[ilocalsym as usize..(ilocalsym + nlocalsym) as usize]
-            .iter()
-            .cloned()
-            .collect();
+        let locals = Some(
+            symtab.symbols[ilocalsym as usize..(ilocalsym + nlocalsym) as usize]
+                .iter()
+                .cloned()
+                .collect(),
+        );
 
-        let extdefs = symtab.symbols[iextdefsym as usize..(iextdefsym + nextdefsym) as usize]
-            .iter()
-            .cloned()
-            .collect();
+        let extdefs = Some(
+            symtab.symbols[iextdefsym as usize..(iextdefsym + nextdefsym) as usize]
+                .iter()
+                .cloned()
+                .collect(),
+        );
 
-        let undefs = symtab.symbols[iundefsym as usize..(iundefsym + nundefsym) as usize]
-            .iter()
-            .cloned()
-            .collect();
+        let undefs = Some(
+            symtab.symbols[iundefsym as usize..(iundefsym + nundefsym) as usize]
+                .iter()
+                .cloned()
+                .collect(),
+        );
 
         let mut indirect_bytes = vec![0u8; nindirectsyms as usize * 4];
         buf.seek(std::io::SeekFrom::Start(indirectsymoff as u64))
@@ -329,10 +415,12 @@ impl DysymtabCommand {
                 }
                 indices.push(index);
             }
-            indices
-                .iter()
-                .map(|&i| symtab.symbols[i as usize].clone())
-                .collect()
+            Some(
+                indices
+                    .iter()
+                    .map(|&i| symtab.symbols[i as usize].clone())
+                    .collect(),
+            )
         };
 
         Ok((
@@ -362,6 +450,7 @@ impl DysymtabCommand {
                 extdefs,
                 undefs,
                 indirect,
+                phantom: PhantomData,
             },
         ))
     }

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use num_derive::FromPrimitive;
 
-use crate::load_command::LoadCommandResolved;
+use crate::load_command::LoadCommand;
 use crate::macho::{ImageValue, MachO, MachOErr, MachOResult, Resolved};
 
 bitflags::bitflags! {
@@ -40,7 +40,7 @@ impl ObjCImageInfo {
             .load_commands()
             .iter()
             .filter_map(|lc| match lc {
-                LoadCommandResolved::Segment64(seg) => Some(seg),
+                LoadCommand::Segment64(seg) => Some(seg),
                 _ => None,
             })
             .flat_map(|seg| &seg.sections)
@@ -171,7 +171,7 @@ impl ObjCCategory {
             .load_commands()
             .iter()
             .filter_map(|lc| match lc {
-                LoadCommandResolved::Segment64(seg) => Some(seg),
+                LoadCommand::Segment64(seg) => Some(seg),
                 _ => None,
             })
             .flat_map(|seg| &seg.sections)
@@ -606,7 +606,7 @@ impl ObjCProtocol {
             .load_commands()
             .iter()
             .filter_map(|lc| match lc {
-                LoadCommandResolved::Segment64(seg) => Some(seg),
+                LoadCommand::Segment64(seg) => Some(seg),
                 _ => None,
             })
             .flat_map(|seg| &seg.sections)
@@ -637,7 +637,7 @@ impl ObjCProtocol {
             .load_commands()
             .iter()
             .filter_map(|lc| match lc {
-                LoadCommandResolved::Segment64(seg) => Some(seg),
+                LoadCommand::Segment64(seg) => Some(seg),
                 _ => None,
             })
             .flat_map(|seg| &seg.sections)
@@ -960,7 +960,7 @@ impl ObjCClass {
             .load_commands()
             .iter()
             .filter_map(|lc| match lc {
-                LoadCommandResolved::Segment64(seg) => Some(seg),
+                LoadCommand::Segment64(seg) => Some(seg),
                 _ => None,
             })
             .flat_map(|seg| &seg.sections)
@@ -992,7 +992,7 @@ impl ObjCClass {
             .load_commands()
             .iter()
             .filter_map(|lc| match lc {
-                LoadCommandResolved::Segment64(seg) => Some(seg),
+                LoadCommand::Segment64(seg) => Some(seg),
                 _ => None,
             })
             .flat_map(|seg| &seg.sections)
@@ -1022,7 +1022,7 @@ impl ObjCClass {
             .load_commands()
             .iter()
             .filter_map(|lc| match lc {
-                LoadCommandResolved::Segment64(seg) => Some(seg),
+                LoadCommand::Segment64(seg) => Some(seg),
                 _ => None,
             })
             .flat_map(|seg| &seg.sections)
@@ -1212,7 +1212,7 @@ impl ObjCSelRef {
             .load_commands()
             .iter()
             .filter_map(|lc| match lc {
-                LoadCommandResolved::Segment64(seg) => Some(seg),
+                LoadCommand::Segment64(seg) => Some(seg),
                 _ => None,
             })
             .flat_map(|seg| &seg.sections)

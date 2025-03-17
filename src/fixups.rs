@@ -6,7 +6,8 @@ use num_derive::FromPrimitive;
 
 use crate::{
     dyldinfo::{DyldChainedImport, DyldPointerFormat, DyldStartsInSegment},
-    load_command::LoadCommandResolved,
+    load_command::LoadCommand,
+    macho::Resolved,
 };
 
 #[derive(Debug, FromPrimitive, Clone)]
@@ -564,10 +565,10 @@ impl DyldPointerFixup {
         }
     }
 
-    pub fn rebase_base_vm_addr(self, lcs: &Vec<LoadCommandResolved>) -> Option<u64> {
+    pub fn rebase_base_vm_addr(self, lcs: &Vec<LoadCommand<Resolved>>) -> Option<u64> {
         self.rebase_offset().and_then(|offset| {
             lcs.iter().find_map(|lc| match lc {
-                LoadCommandResolved::Segment64(seg) => {
+                LoadCommand::Segment64(seg) => {
                     // The kernel assumes that every binary's base address
                     // is in __TEXT.
                     if seg.segname == "__TEXT" {

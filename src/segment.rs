@@ -5,7 +5,8 @@ use num_derive::FromPrimitive;
 use crate::{
     header::MachHeader,
     helpers::string_upto_null_terminator,
-    load_command::{LCLoadCommand, LoadCommandBase, LoadCommandResolved},
+    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase},
+    macho::Resolved,
 };
 
 bitflags::bitflags! {
@@ -267,7 +268,7 @@ impl SegmentCommand32 {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommandResolved>,
+        _: &Vec<LoadCommand<Resolved>>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, segname) = nom::bytes::complete::take(16usize)(cursor)?;
@@ -332,7 +333,7 @@ impl SegmentCommand64 {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommandResolved>,
+        _: &Vec<LoadCommand<Resolved>>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, segname) = nom::bytes::complete::take(16usize)(cursor)?;

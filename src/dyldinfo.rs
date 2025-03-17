@@ -12,8 +12,8 @@ use crate::{
     fixups::DyldFixup,
     header::MachHeader,
     helpers::{read_sleb, read_uleb, string_upto_null_terminator},
-    load_command::LoadCommandResolved,
-    load_command::{LCLoadCommand, LoadCommandBase},
+    load_command::{LCLoadCommand, LoadCommand, LoadCommandBase},
+    macho::Resolved,
 };
 
 #[derive(Debug, FromPrimitive, Clone, Copy)]
@@ -709,7 +709,7 @@ impl DyldChainedFixupCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommandResolved>,
+        _: &Vec<LoadCommand<Resolved>>,
     ) -> nom::IResult<&'a [u8], DyldChainedFixupCommand> {
         let (_, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
         let mut blob = vec![0; cmd.datasize as usize];
@@ -775,7 +775,7 @@ impl DyldInfoCommand {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommandResolved>,
+        _: &Vec<LoadCommand<Resolved>>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let (cursor, rebase_off) = nom::number::complete::le_u32(cursor)?;
@@ -851,7 +851,7 @@ impl DyldExportsTrie {
         base: LoadCommandBase,
         ldcmd: &'a [u8],
         _: MachHeader,
-        _: &Vec<LoadCommandResolved>,
+        _: &Vec<LoadCommand<Resolved>>,
     ) -> nom::IResult<&'a [u8], Self> {
         let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd, base)?;
         let mut blob = vec![0; cmd.datasize as usize];

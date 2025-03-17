@@ -6,7 +6,7 @@ use std::{
 
 use macho2::{
     header::MHMagic,
-    load_command::LoadCommandResolved,
+    load_command::LoadCommand,
     macho::{FatMachO, MachO, MachOErr, MachOResult, Resolved},
 };
 
@@ -76,23 +76,23 @@ fn print_nm<T: Read + Seek>(macho: &MachO<T, Resolved>) {
         .load_commands()
         .iter()
         .filter(|lc| match lc {
-            LoadCommandResolved::DyldExportsTrie(_)
-            | LoadCommandResolved::DyldInfo(_)
-            | LoadCommandResolved::DyldInfoOnly(_) => true,
+            LoadCommand::DyldExportsTrie(_)
+            | LoadCommand::DyldInfo(_)
+            | LoadCommand::DyldInfoOnly(_) => true,
             _ => false,
         })
         .for_each(|lc| match lc {
-            LoadCommandResolved::DyldExportsTrie(export) => {
+            LoadCommand::DyldExportsTrie(export) => {
                 export.exports.iter().for_each(|f| {
                     println!("{}", f.name);
                 });
             }
-            LoadCommandResolved::DyldInfo(info) => {
+            LoadCommand::DyldInfo(info) => {
                 info.exports.iter().for_each(|f| {
                     println!("{}", f.name);
                 });
             }
-            LoadCommandResolved::DyldInfoOnly(info) => {
+            LoadCommand::DyldInfoOnly(info) => {
                 info.exports.iter().for_each(|f| {
                     println!("{}", f.name);
                 });
