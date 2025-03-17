@@ -13,7 +13,6 @@ use nom::{
 use num_derive::FromPrimitive;
 
 use crate::{
-    header::MachHeader,
     helpers::string_upto_null_terminator,
     load_command::{LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved},
     macho::{Raw, Resolved},
@@ -205,7 +204,6 @@ impl<'a, T: Seek + Read> ParseResolved<'a, T> for SymtabCommand<Resolved> {
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
-        _: MachHeader,
         _: &Vec<LoadCommand<Resolved>>,
     ) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
@@ -349,7 +347,6 @@ impl<'a, T: Seek + Read> ParseResolved<'a, T> for DysymtabCommand<Resolved> {
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
-        _: MachHeader,
         prev_cmds: &Vec<LoadCommand<Resolved>>,
     ) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;

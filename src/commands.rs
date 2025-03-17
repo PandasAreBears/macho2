@@ -323,7 +323,6 @@ impl<'a, T: Read + Seek> ParseResolved<'a, T> for FunctionStartsCommand<Resolved
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
-        _: MachHeader,
         _: &Vec<LoadCommand<Resolved>>,
     ) -> IResult<&'a [u8], Self> {
         let (bytes, linkeditcmd) = LinkeditDataCommand::parse(base, ldcmd)?;

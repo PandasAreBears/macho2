@@ -16,7 +16,6 @@ use num_derive::FromPrimitive;
 
 use crate::{
     commands::LinkeditDataCommand,
-    header::MachHeader,
     helpers::string_upto_null_terminator,
     load_command::{LoadCommand, LoadCommandBase, ParseRaw, ParseResolved},
     macho::{Raw, Resolved},
@@ -508,7 +507,6 @@ impl<'a, T: Seek + Read> ParseResolved<'a, T> for CodeSignCommand<Resolved> {
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
-        _: MachHeader,
         _: &Vec<LoadCommand<Resolved>>,
     ) -> IResult<&'a [u8], Self> {
         let (bytes, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;

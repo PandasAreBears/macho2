@@ -18,7 +18,6 @@ use num_derive::FromPrimitive;
 use crate::{
     commands::LinkeditDataCommand,
     fixups::DyldFixup,
-    header::MachHeader,
     helpers::{read_sleb, read_uleb, string_upto_null_terminator},
     load_command::{LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved},
     macho::{Raw, Resolved},
@@ -719,7 +718,6 @@ impl<'a, T: Read + Seek> ParseResolved<'a, T> for DyldChainedFixupCommand<Resolv
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
-        _: MachHeader,
         _: &Vec<LoadCommand<Resolved>>,
     ) -> IResult<&'a [u8], Self> {
         let (_, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
@@ -835,7 +833,6 @@ impl<'a, T: Read + Seek> ParseResolved<'a, T> for DyldInfoCommand<Resolved> {
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
-        _: MachHeader,
         _: &Vec<LoadCommand<Resolved>>,
     ) -> IResult<&'a [u8], Self> {
         let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
@@ -935,7 +932,6 @@ impl<'a, T: Seek + Read> ParseResolved<'a, T> for DyldExportsTrie<Resolved> {
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
-        _: MachHeader,
         _: &Vec<LoadCommand<Resolved>>,
     ) -> IResult<&'a [u8], Self> {
         let (bytes, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
