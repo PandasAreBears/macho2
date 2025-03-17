@@ -12,6 +12,7 @@ A better parser for the MachO file format.
 - [x] Tool for dumping MachO header/ load commands
 - [x] Tool for extracting thin MachO from fat MachO
 - [x] Parse ObjC runtime data
+- [x] Support for lightweight parsing which only reads the mach header and load commands
 
 ## TODO
 
