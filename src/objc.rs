@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use num_derive::FromPrimitive;
 
-use crate::macho::{ImageValue, LoadCommand, MachO, MachOErr, MachOResult};
+use crate::macho::{ImageValue, LoadCommand, MachO, MachOErr, MachOResult, Resolved};
 
 bitflags::bitflags! {
     #[derive(Debug)]
@@ -34,7 +34,7 @@ impl ObjCImageInfo {
     pub const SWIFT_UNSTABLE_VERSION_MASK: u32 = 0xff << 8;
     pub const SWIFT_STABLE_VERSION_MASK: u32 = 0xff << 16;
 
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>) -> Option<ObjCImageInfo> {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Option<ObjCImageInfo> {
         let objc_image_info = macho
             .load_commands
             .iter()
@@ -79,7 +79,10 @@ pub struct ObjCProperty {
 }
 
 impl ObjCProperty {
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCProperty> {
+    pub fn parse<T: Read + Seek>(
+        macho: &mut MachO<T, Resolved>,
+        offset: u64,
+    ) -> MachOResult<ObjCProperty> {
         lazy_static! {
             static ref OBJC_PROPERTY_CACHE: Mutex<HashMap<u64, Arc<ObjCProperty>>> =
                 Mutex::new(HashMap::new());
@@ -126,7 +129,7 @@ pub struct ObjCPropertyList {
 }
 
 impl ObjCPropertyList {
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> ObjCPropertyList {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T, Resolved>, offset: u64) -> ObjCPropertyList {
         let mut data = vec![0u8; 8];
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
@@ -162,7 +165,7 @@ pub struct ObjCCategory {
 }
 
 impl ObjCCategory {
-    pub fn parse_catlist<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCCategory> {
+    pub fn parse_catlist<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Vec<ObjCCategory> {
         let catlist = macho
             .load_commands
             .iter()
@@ -203,7 +206,10 @@ impl ObjCCategory {
             .collect()
     }
 
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCCategory> {
+    pub fn parse<T: Read + Seek>(
+        macho: &mut MachO<T, Resolved>,
+        offset: u64,
+    ) -> MachOResult<ObjCCategory> {
         lazy_static! {
             static ref OBJC_CATEGORY_CACHE: Mutex<HashMap<u64, Arc<ObjCCategory>>> =
                 Mutex::new(HashMap::new());
@@ -296,7 +302,10 @@ pub struct ObjCIVar {
 }
 
 impl ObjCIVar {
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCIVar> {
+    pub fn parse<T: Read + Seek>(
+        macho: &mut MachO<T, Resolved>,
+        offset: u64,
+    ) -> MachOResult<ObjCIVar> {
         lazy_static! {
             static ref OBJC_IVAR_CACHE: Mutex<HashMap<u64, Arc<ObjCIVar>>> =
                 Mutex::new(HashMap::new());
@@ -359,7 +368,7 @@ pub struct ObjCIVarList {
 }
 
 impl ObjCIVarList {
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> ObjCIVarList {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T, Resolved>, offset: u64) -> ObjCIVarList {
         let mut data = vec![0u8; 8];
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
@@ -409,7 +418,10 @@ pub struct ObjCMethodListSizeAndFlags {
 impl ObjCMethodListSizeAndFlags {
     pub const FLAGS_BITMASK: u32 = 0xFFFF_0003;
     pub const SIZE_BITMASK: u32 = 0x0000_FFFC;
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> ObjCMethodListSizeAndFlags {
+    pub fn parse<T: Read + Seek>(
+        macho: &mut MachO<T, Resolved>,
+        offset: u64,
+    ) -> ObjCMethodListSizeAndFlags {
         let mut data = vec![0u8; 4];
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
@@ -430,7 +442,7 @@ pub struct ObjCMethodList {
 }
 
 impl ObjCMethodList {
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> ObjCMethodList {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T, Resolved>, offset: u64) -> ObjCMethodList {
         let size_and_flags = ObjCMethodListSizeAndFlags::parse(macho, offset);
 
         let mut count = vec![0u8; 4];
@@ -477,7 +489,7 @@ pub struct ObjCMethod {
 
 impl ObjCMethod {
     pub fn parse_small<T: Read + Seek>(
-        macho: &mut MachO<T>,
+        macho: &mut MachO<T, Resolved>,
         offset: u64,
     ) -> MachOResult<ObjCMethod> {
         lazy_static! {
@@ -529,7 +541,7 @@ impl ObjCMethod {
     }
 
     pub fn parse_normal<T: Read + Seek>(
-        macho: &mut MachO<T>,
+        macho: &mut MachO<T, Resolved>,
         offset: u64,
     ) -> MachOResult<ObjCMethod> {
         lazy_static! {
@@ -588,7 +600,7 @@ pub struct ObjCProtocol {
 }
 
 impl ObjCProtocol {
-    pub fn parse_protorefs<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<String> {
+    pub fn parse_protorefs<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Vec<String> {
         let protorefs = macho
             .load_commands
             .iter()
@@ -619,7 +631,7 @@ impl ObjCProtocol {
             .collect()
     }
 
-    pub fn parse_protolist<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCProtocol> {
+    pub fn parse_protolist<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Vec<ObjCProtocol> {
         let protolist = macho
             .load_commands
             .iter()
@@ -660,7 +672,10 @@ impl ObjCProtocol {
             .collect()
     }
 
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCProtocol> {
+    pub fn parse<T: Read + Seek>(
+        macho: &mut MachO<T, Resolved>,
+        offset: u64,
+    ) -> MachOResult<ObjCProtocol> {
         lazy_static! {
             static ref OBJC_PROTOCOL_CACHE: Mutex<HashMap<u64, Arc<ObjCProtocol>>> =
                 Mutex::new(HashMap::new());
@@ -778,7 +793,7 @@ pub struct ObjCProtocolList {
 
 impl ObjCProtocolList {
     pub fn parse<T: Read + Seek>(
-        macho: &mut MachO<T>,
+        macho: &mut MachO<T, Resolved>,
         offset: u64,
     ) -> MachOResult<ObjCProtocolList> {
         let mut data = vec![0u8; 8];
@@ -825,7 +840,10 @@ pub struct ObjCClassRO {
 }
 
 impl ObjCClassRO {
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, vmaddr: u64) -> MachOResult<ObjCClassRO> {
+    pub fn parse<T: Read + Seek>(
+        macho: &mut MachO<T, Resolved>,
+        vmaddr: u64,
+    ) -> MachOResult<ObjCClassRO> {
         lazy_static! {
             static ref OBJC_CLASSRO_CACHE: Mutex<HashMap<u64, Arc<ObjCClassRO>>> =
                 Mutex::new(HashMap::new());
@@ -936,7 +954,7 @@ pub struct ObjCClass {
 
 impl ObjCClass {
     pub const CLASS_RO_BIT_MASK: u64 = 0x00007ffffffffff8;
-    pub fn parse_classrefs<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<String> {
+    pub fn parse_classrefs<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Vec<String> {
         let classrefs = macho
             .load_commands
             .iter()
@@ -968,7 +986,7 @@ impl ObjCClass {
             .collect()
     }
 
-    pub fn parse_superrefs<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<String> {
+    pub fn parse_superrefs<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Vec<String> {
         let superrefs = macho
             .load_commands
             .iter()
@@ -998,7 +1016,7 @@ impl ObjCClass {
             })
             .collect()
     }
-    pub fn parse_classlist<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCClass> {
+    pub fn parse_classlist<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Vec<ObjCClass> {
         let classlist = macho
             .load_commands
             .iter()
@@ -1040,7 +1058,7 @@ impl ObjCClass {
     }
 
     pub fn parse<T: Read + Seek>(
-        macho: &mut MachO<T>,
+        macho: &mut MachO<T, Resolved>,
         offset: u64,
         prev_isa: Option<u64>,
         prev_superclass: Option<u64>,
@@ -1156,7 +1174,10 @@ pub struct ObjCSelRef {
 }
 
 impl ObjCSelRef {
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>, offset: u64) -> MachOResult<ObjCSelRef> {
+    pub fn parse<T: Read + Seek>(
+        macho: &mut MachO<T, Resolved>,
+        offset: u64,
+    ) -> MachOResult<ObjCSelRef> {
         lazy_static! {
             static ref OBJC_CLASSRO_CACHE: Mutex<HashMap<u64, Arc<ObjCSelRef>>> =
                 Mutex::new(HashMap::new());
@@ -1185,7 +1206,7 @@ impl ObjCSelRef {
 
         Ok(selref)
     }
-    pub fn parse_selrefs<T: Read + Seek>(macho: &mut MachO<T>) -> Vec<ObjCSelRef> {
+    pub fn parse_selrefs<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Vec<ObjCSelRef> {
         let selrefs = macho
             .load_commands
             .iter()
@@ -1229,7 +1250,7 @@ pub struct ObjCInfo {
 }
 
 impl ObjCInfo {
-    pub fn parse<T: Read + Seek>(macho: &mut MachO<T>) -> Option<ObjCInfo> {
+    pub fn parse<T: Read + Seek>(macho: &mut MachO<T, Resolved>) -> Option<ObjCInfo> {
         let imageinfo = ObjCImageInfo::parse(macho);
         let selrefs = ObjCSelRef::parse_selrefs(macho);
         let classes = ObjCClass::parse_classlist(macho);

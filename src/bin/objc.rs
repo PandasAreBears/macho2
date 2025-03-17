@@ -5,7 +5,7 @@ use std::{
 };
 
 use macho2::{
-    macho::{FatMachO, MachO, MachOErr, MachOResult},
+    macho::{FatMachO, MachO, MachOErr, MachOResult, Resolved},
     objc::ObjCInfo,
 };
 fn main() -> MachOResult<()> {
@@ -51,7 +51,7 @@ fn main() -> MachOResult<()> {
             })
             .unwrap();
         print_objc(&mut macho);
-    } else if MachO::is_macho_magic(&mut file)? {
+    } else if MachO::<_, Resolved>::is_macho_magic(&mut file)? {
         let mut macho = MachO::parse(file).unwrap();
         print_objc(&mut macho);
     } else {
@@ -63,7 +63,7 @@ fn main() -> MachOResult<()> {
     Ok(())
 }
 
-fn print_objc<T: Read + Seek>(macho: &mut MachO<T>) {
+fn print_objc<T: Read + Seek>(macho: &mut MachO<T, Resolved>) {
     let objc_info = ObjCInfo::parse(macho).unwrap();
     println!("nselrefs={}", objc_info.selrefs.len());
     println!("nclasses={}", objc_info.classes.len());

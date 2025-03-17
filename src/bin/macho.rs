@@ -1,6 +1,6 @@
 use macho2::{
     header::MachHeader,
-    macho::{FatMachO, LoadCommand, MachO, MachOErr, MachOResult},
+    macho::{FatMachO, LoadCommand, MachO, MachOErr, MachOResult, Resolved},
     segment::Protection,
 };
 use std::{
@@ -46,15 +46,15 @@ fn main() -> MachOResult<()> {
             }
         };
         let macho = fat_macho
-            .macho(fat_macho.archs[index].cputype())
+            .macho::<Resolved>(fat_macho.archs[index].cputype())
             .map_err(|e| {
                 panic!("Failed to extract Mach-O: {}", e);
             })
             .unwrap();
         print_header(macho.header);
         print_load_commands(macho.load_commands);
-    } else if MachO::is_macho_magic(&mut file)? {
-        let macho = MachO::parse(file).unwrap();
+    } else if MachO::<_, Resolved>::is_macho_magic(&mut file)? {
+        let macho = MachO::<_, Resolved>::parse(file).unwrap();
         print_header(macho.header);
         print_load_commands(macho.load_commands);
     } else {

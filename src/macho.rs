@@ -1,5 +1,6 @@
 use std::error;
 use std::io::{Read, Seek, SeekFrom};
+use std::marker::PhantomData;
 
 use crate::codesign::CodeSignCommand;
 use crate::commands::{
@@ -23,6 +24,10 @@ use crate::machine;
 use crate::segment::{SegmentCommand32, SegmentCommand64};
 use crate::symtab::{DysymtabCommand, SymtabCommand};
 use std::fmt;
+
+/// ZSTs to define the load command parsing behaviour.
+pub struct Raw;
+pub struct Resolved;
 
 #[derive(Debug)]
 pub struct MachOErr {
@@ -395,14 +400,15 @@ impl ImageValue {
 
 #[allow(dead_code)]
 #[derive(Debug)]
-pub struct MachO<T: Seek + Read> {
+pub struct MachO<T: Seek + Read, A> {
     pub header: MachHeader,
     pub load_commands: Vec<LoadCommand>,
     pub buf: T,
     segs: Vec<SegmentCommand64>,
+    phantom: PhantomData<A>,
 }
 
-impl<T: Seek + Read> MachO<T> {
+impl<T: Seek + Read, A> MachO<T, A> {
     pub fn is_macho_magic(buf: &mut T) -> MachOResult<bool> {
         let mut magic: [u8; 4] = [0; 4];
         buf.seek(SeekFrom::Start(0)).map_err(|_| MachOErr {
@@ -434,6 +440,7 @@ impl<T: Seek + Read> MachO<T> {
             load_commands,
             buf,
             segs,
+            phantom: PhantomData,
         })
     }
 
@@ -613,7 +620,10 @@ impl<'a, T: Seek + Read> FatMachO<'a, T> {
         Ok(Self { header, archs, buf })
     }
 
-    pub fn macho(&'a mut self, cputype: machine::CpuType) -> MachOResult<MachO<FileSubset<'a, T>>> {
+    pub fn macho<A>(
+        &'a mut self,
+        cputype: machine::CpuType,
+    ) -> MachOResult<MachO<FileSubset<'a, T>, A>> {
         let arch = self
             .archs
             .iter()
@@ -631,7 +641,7 @@ impl<'a, T: Seek + Read> FatMachO<'a, T> {
             }
         };
 
-        if !MachO::is_macho_magic(&mut partial)? {
+        if !MachO::<_, A>::is_macho_magic(&mut partial)? {
             return Err(MachOErr {
                 detail: "Fat MachO slice is not a MachO".to_string(),
             });

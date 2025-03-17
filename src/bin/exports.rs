@@ -6,7 +6,7 @@ use std::{
 
 use macho2::{
     header::MHMagic,
-    macho::{FatMachO, LoadCommand, MachO, MachOErr, MachOResult},
+    macho::{FatMachO, LoadCommand, MachO, MachOErr, MachOResult, Resolved},
 };
 
 fn main() -> MachOResult<()> {
@@ -58,7 +58,7 @@ fn main() -> MachOResult<()> {
         };
         let macho = fat_macho.macho(fat_macho.archs[index].cputype())?;
         print_nm(&macho);
-    } else if MachO::is_macho_magic(&mut file)? {
+    } else if MachO::<_, Resolved>::is_macho_magic(&mut file)? {
         let macho = MachO::parse(file).unwrap();
         print_nm(&macho);
     } else {
@@ -70,7 +70,7 @@ fn main() -> MachOResult<()> {
     Ok(())
 }
 
-fn print_nm<T: Read + Seek>(macho: &MachO<T>) {
+fn print_nm<T: Read + Seek>(macho: &MachO<T, Resolved>) {
     macho
         .load_commands
         .iter()
