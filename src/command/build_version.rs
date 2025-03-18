@@ -2,9 +2,9 @@ use nom::{number::complete::le_u32, IResult};
 use nom_derive::{Nom, Parse};
 use strum_macros::{Display, EnumString};
 
-use crate::helpers::version_string;
+use crate::helpers::{reverse_version_string, version_string};
 
-use super::{LCLoadCommand, LoadCommandBase};
+use super::{LCLoadCommand, LoadCommandBase, Serialize};
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Nom, EnumString, Display)]
@@ -43,7 +43,7 @@ pub enum Platform {
     SepOS = 14,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct BuildToolVersion {
     pub tool: Tool,
     pub version: String,
@@ -64,7 +64,16 @@ impl BuildToolVersion {
     }
 }
 
-#[derive(Debug)]
+impl Serialize for BuildToolVersion {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend((self.tool as u32).to_le_bytes());
+        buf.extend(reverse_version_string(self.version.clone()).to_le_bytes());
+        buf
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct BuildVersionCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -104,5 +113,46 @@ impl<'a> BuildVersionCommand {
                 tools,
             },
         ))
+    }
+}
+
+impl Serialize for BuildVersionCommand {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+        buf.extend((self.platform as u32).to_le_bytes());
+        buf.extend(reverse_version_string(self.minos.clone()).to_le_bytes());
+        buf.extend(reverse_version_string(self.sdk.clone()).to_le_bytes());
+        buf.extend(self.ntools.to_le_bytes());
+        for tool in &self.tools {
+            buf.extend(tool.serialize());
+        }
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_build_version_command() {
+        let build = BuildVersionCommand {
+            cmd: LCLoadCommand::LcBuildVersion,
+            cmdsize: 0x00000038,
+            platform: Platform::IOSSimulator,
+            minos: "13.0.0".to_string(),
+            sdk: "13.0.0".to_string(),
+            ntools: 1,
+            tools: vec![BuildToolVersion {
+                tool: Tool::Clang,
+                version: "0.33.17".to_string(),
+            }],
+        };
+
+        let ser = build.serialize();
+        let (_, parsed) = BuildVersionCommand::parse(&ser).unwrap();
+        assert_eq!(parsed, build);
     }
 }

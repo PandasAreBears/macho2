@@ -18,6 +18,14 @@ pub fn version_string(version: u32) -> String {
     )
 }
 
+pub fn reverse_version_string(versiong: String) -> u32 {
+    let parts: Vec<&str> = versiong.split('.').collect();
+    let major = parts[0].parse::<u32>().unwrap();
+    let minor = parts[1].parse::<u32>().unwrap();
+    let revision = parts[2].parse::<u32>().unwrap();
+    (major << 16) | (minor << 8) | revision
+}
+
 pub fn read_uleb(bytes: &[u8]) -> IResult<&[u8], u64> {
     let mut result = 0;
     let mut shift = 0;
