@@ -264,7 +264,6 @@ where
         let (_, base) = LoadCommandBase::parse(remaining_ldcmds).map_err(|_| MachOErr {
             detail: format!("Unable to parse load command base for index {}", i),
         })?;
-        println!("{:?}", base);
 
         let cmdsize = base.cmdsize as usize;
         if cmdsize > remaining_ldcmds.len() {
