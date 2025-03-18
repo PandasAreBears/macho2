@@ -16,7 +16,7 @@ use num_derive::FromPrimitive;
 
 use crate::{
     command::linkedit_data::LinkeditDataCommand,
-    command::{LoadCommand, LoadCommandBase, ParseRaw, ParseResolved, Raw, Resolved},
+    command::{Raw, Resolved},
     helpers::string_upto_null_terminator,
 };
 
@@ -486,9 +486,9 @@ pub struct CodeSignCommand<A> {
     phantom: PhantomData<A>,
 }
 
-impl<'a> ParseRaw<'a> for CodeSignCommand<Raw> {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
-        let (cursor, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
+impl<'a> CodeSignCommand<Raw> {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, cmd) = LinkeditDataCommand::parse(ldcmd)?;
 
         Ok((
             cursor,
@@ -501,14 +501,9 @@ impl<'a> ParseRaw<'a> for CodeSignCommand<Raw> {
     }
 }
 
-impl<'a, T: Seek + Read> ParseResolved<'a, T> for CodeSignCommand<Resolved> {
-    fn parse(
-        buf: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> IResult<&'a [u8], Self> {
-        let (bytes, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
+impl<'a> CodeSignCommand<Resolved> {
+    pub fn parse<T: Seek + Read>(ldcmd: &'a [u8], buf: &mut T) -> IResult<&'a [u8], Self> {
+        let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd)?;
         let mut cs = vec![0u8; cmd.datasize as usize];
         buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
         buf.read_exact(&mut cs).unwrap();

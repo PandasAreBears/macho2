@@ -1,8 +1,8 @@
 use nom::{number::complete::le_u32, IResult};
 
-use crate::{header::MachHeader, helpers::string_upto_null_terminator};
+use crate::helpers::string_upto_null_terminator;
 
-use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
+use super::{LCLoadCommand, LoadCommandBase};
 
 #[derive(Debug)]
 pub struct LinkerOptionCommand {
@@ -14,9 +14,9 @@ pub struct LinkerOptionCommand {
     pub strings: Vec<String>,
 }
 
-impl<'a> ParseRegular<'a> for LinkerOptionCommand {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (mut cursor, _) = LoadCommandBase::skip(&ldcmd)?;
+impl<'a> LinkerOptionCommand {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (mut cursor, base) = LoadCommandBase::parse(&ldcmd)?;
         let (_, count) = le_u32(cursor)?;
 
         let mut strings = Vec::new();

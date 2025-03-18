@@ -2,9 +2,7 @@ use std::io::{Read, Seek};
 
 use nom::{number::complete::le_u32, sequence, IResult};
 
-use crate::header::MachHeader;
-
-use super::{LCLoadCommand, LoadCommand, LoadCommandBase, Resolved};
+use super::{LCLoadCommand, LoadCommandBase};
 
 bitflags::bitflags! {
     #[repr(transparent)]
@@ -37,14 +35,8 @@ pub struct DylibUseCommand {
 }
 
 impl DylibUseCommand {
-    pub fn parse<'a, T: Seek + Read>(
-        _: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: MachHeader,
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+    pub fn parse<'a, T: Seek + Read>(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
 
         let (_, (nameoff, marker, current_version, compat_version)) =
             sequence::tuple((le_u32, le_u32, le_u32, le_u32))(cursor)?;

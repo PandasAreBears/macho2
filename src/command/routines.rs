@@ -1,8 +1,6 @@
 use nom::{number::complete::le_u64, IResult};
 
-use crate::header::MachHeader;
-
-use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
+use super::{LCLoadCommand, LoadCommandBase};
 
 #[derive(Debug)]
 pub struct RoutinesCommand64 {
@@ -18,9 +16,9 @@ pub struct RoutinesCommand64 {
     pub reserved6: u64,
 }
 
-impl<'a> ParseRegular<'a> for RoutinesCommand64 {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> RoutinesCommand64 {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, init_address) = le_u64(cursor)?;
         let (cursor, init_module) = le_u64(cursor)?;
         let (cursor, reserved1) = le_u64(cursor)?;

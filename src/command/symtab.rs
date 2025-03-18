@@ -14,7 +14,7 @@ use num_derive::FromPrimitive;
 
 use crate::helpers::string_upto_null_terminator;
 
-use super::{LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved, Raw, Resolved};
+use super::{LCLoadCommand, LoadCommandBase, Raw, Resolved};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
 pub enum NlistTypeType {
@@ -176,9 +176,9 @@ pub struct SymtabCommand<A> {
     phantom: PhantomData<A>,
 }
 
-impl<'a> ParseRaw<'a> for SymtabCommand<Raw> {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> SymtabCommand<Raw> {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, (symoff, nsyms, stroff, strsize)) =
             sequence::tuple((le_u32, le_u32, le_u32, le_u32))(cursor)?;
         Ok((
@@ -197,14 +197,9 @@ impl<'a> ParseRaw<'a> for SymtabCommand<Raw> {
     }
 }
 
-impl<'a, T: Seek + Read> ParseResolved<'a, T> for SymtabCommand<Resolved> {
-    fn parse(
-        buf: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> SymtabCommand<Resolved> {
+    pub fn parse<T: Seek + Read>(ldcmd: &'a [u8], buf: &mut T) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, (symoff, nsyms, stroff, strsize)) =
             sequence::tuple((le_u32, le_u32, le_u32, le_u32))(cursor)?;
 

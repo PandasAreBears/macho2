@@ -1,9 +1,8 @@
 use nom::IResult;
 
-use crate::header::MachHeader;
-use crate::machine::{ThreadState, ThreadStateBase};
+use crate::machine::{CpuType, ThreadState, ThreadStateBase};
 
-use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
+use super::{LCLoadCommand, LoadCommandBase};
 
 #[derive(Debug)]
 pub struct ThreadCommand {
@@ -12,17 +11,13 @@ pub struct ThreadCommand {
     pub threads: Vec<ThreadState>,
 }
 
-impl<'a> ParseRegular<'a> for ThreadCommand {
-    fn parse(
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        header: &MachHeader,
-    ) -> IResult<&'a [u8], Self> {
+impl<'a> ThreadCommand {
+    pub fn parse(ldcmd: &'a [u8], cputype: CpuType) -> IResult<&'a [u8], Self> {
+        let (mut cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let end = &ldcmd[base.cmdsize as usize..];
-        let (mut cursor, _) = LoadCommandBase::skip(ldcmd)?;
         let mut threads = Vec::new();
         while cursor.as_ptr() < end.as_ptr() {
-            let (next, tsbase) = ThreadStateBase::parse(cursor, *header.cputype())?;
+            let (next, tsbase) = ThreadStateBase::parse(cursor, cputype)?;
             let (next, thread) = ThreadState::parse(next, tsbase)?;
             cursor = next;
             threads.push(thread);

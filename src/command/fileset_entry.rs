@@ -3,9 +3,9 @@ use nom::{
     IResult,
 };
 
-use crate::{header::MachHeader, helpers::string_upto_null_terminator};
+use crate::helpers::string_upto_null_terminator;
 
-use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
+use super::{LCLoadCommand, LoadCommandBase};
 
 #[derive(Debug)]
 pub struct FilesetEntryCommand {
@@ -17,9 +17,9 @@ pub struct FilesetEntryCommand {
     pub reserved: u32,
 }
 
-impl<'a> ParseRegular<'a> for FilesetEntryCommand {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> FilesetEntryCommand {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, vmaddr) = le_u64(cursor)?;
         let (cursor, fileoff) = le_u64(cursor)?;
         let (cursor, entry_id_offset) = le_u32(cursor)?;

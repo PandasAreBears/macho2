@@ -1,8 +1,6 @@
 use nom::{number::complete::le_u64, IResult};
 
-use crate::header::MachHeader;
-
-use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
+use super::{LCLoadCommand, LoadCommandBase};
 
 #[derive(Debug)]
 pub struct SourceVersionCommand {
@@ -11,9 +9,9 @@ pub struct SourceVersionCommand {
     pub version: String, // A.B.C.D.E packed as a24.b10.c10.d10.e10
 }
 
-impl<'a> ParseRegular<'a> for SourceVersionCommand {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> SourceVersionCommand {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, version) = le_u64(cursor)?;
 
         let a = (version >> 40) as u32;

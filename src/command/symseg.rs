@@ -1,8 +1,6 @@
 use nom::{number::complete::le_u32, IResult};
 
-use crate::header::MachHeader;
-
-use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
+use super::{LCLoadCommand, LoadCommandBase};
 
 #[derive(Debug)]
 pub struct SymsegCommand {
@@ -12,9 +10,9 @@ pub struct SymsegCommand {
     pub size: u32,
 }
 
-impl<'a> ParseRegular<'a> for SymsegCommand {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> SymsegCommand {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, offset) = le_u32(cursor)?;
         let (cursor, size) = le_u32(cursor)?;
 

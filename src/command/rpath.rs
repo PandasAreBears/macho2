@@ -1,8 +1,8 @@
 use nom::{number::complete::le_u32, IResult};
 
-use crate::{header::MachHeader, helpers::string_upto_null_terminator};
+use crate::helpers::string_upto_null_terminator;
 
-use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
+use super::{LCLoadCommand, LoadCommandBase};
 
 #[derive(Debug)]
 pub struct RpathCommand {
@@ -11,9 +11,9 @@ pub struct RpathCommand {
     pub path: String,
 }
 
-impl<'a> ParseRegular<'a> for RpathCommand {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> RpathCommand {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
 
         let (_, path_offset) = le_u32(cursor)?;
         let (cursor, path) = string_upto_null_terminator(&ldcmd[path_offset as usize..])?;

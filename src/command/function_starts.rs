@@ -7,10 +7,7 @@ use nom::IResult;
 
 use crate::helpers::read_uleb_many;
 
-use super::{
-    linkedit_data::LinkeditDataCommand, LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw,
-    ParseResolved, Raw, Resolved,
-};
+use super::{linkedit_data::LinkeditDataCommand, LCLoadCommand, Raw, Resolved};
 
 #[derive(Debug)]
 pub struct FunctionOffset {
@@ -29,9 +26,9 @@ pub struct FunctionStartsCommand<A> {
     phantom: PhantomData<A>,
 }
 
-impl<'a> ParseRaw<'a> for FunctionStartsCommand<Raw> {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
-        let (bytes, linkeditcmd) = LinkeditDataCommand::parse(base, ldcmd)?;
+impl<'a> FunctionStartsCommand<Raw> {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (bytes, linkeditcmd) = LinkeditDataCommand::parse(ldcmd)?;
         Ok((
             bytes,
             FunctionStartsCommand {
@@ -46,14 +43,9 @@ impl<'a> ParseRaw<'a> for FunctionStartsCommand<Raw> {
     }
 }
 
-impl<'a, T: Read + Seek> ParseResolved<'a, T> for FunctionStartsCommand<Resolved> {
-    fn parse(
-        buf: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> IResult<&'a [u8], Self> {
-        let (bytes, linkeditcmd) = LinkeditDataCommand::parse(base, ldcmd)?;
+impl<'a> FunctionStartsCommand<Resolved> {
+    pub fn parse<T: Read + Seek>(ldcmd: &'a [u8], buf: &mut T) -> IResult<&'a [u8], Self> {
+        let (bytes, linkeditcmd) = LinkeditDataCommand::parse(ldcmd)?;
         let mut funcs_blob = vec![0u8; linkeditcmd.datasize as usize];
         buf.seek(SeekFrom::Start(linkeditcmd.dataoff as u64))
             .unwrap();

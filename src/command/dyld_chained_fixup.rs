@@ -16,10 +16,7 @@ use num_derive::FromPrimitive;
 
 use crate::helpers::string_upto_null_terminator;
 
-use super::{
-    linkedit_data::LinkeditDataCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved, Raw,
-    Resolved,
-};
+use super::{linkedit_data::LinkeditDataCommand, LoadCommand, Raw, Resolved};
 
 #[derive(Debug, FromPrimitive, Clone)]
 pub enum DyldFixupPACKey {
@@ -1060,9 +1057,9 @@ pub struct DyldChainedFixupCommand<A> {
     phantom: PhantomData<A>,
 }
 
-impl<'a> ParseRaw<'a> for DyldChainedFixupCommand<Raw> {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
-        let (_, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
+impl<'a> DyldChainedFixupCommand<Raw> {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (_, cmd) = LinkeditDataCommand::parse(ldcmd)?;
         Ok((
             ldcmd,
             DyldChainedFixupCommand {
@@ -1077,14 +1074,9 @@ impl<'a> ParseRaw<'a> for DyldChainedFixupCommand<Raw> {
     }
 }
 
-impl<'a, T: Read + Seek> ParseResolved<'a, T> for DyldChainedFixupCommand<Resolved> {
-    fn parse(
-        buf: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> IResult<&'a [u8], Self> {
-        let (_, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
+impl<'a> DyldChainedFixupCommand<Resolved> {
+    pub fn parse<T: Read + Seek>(ldcmd: &'a [u8], buf: &mut T) -> IResult<&'a [u8], Self> {
+        let (_, cmd) = LinkeditDataCommand::parse(ldcmd)?;
         let mut blob = vec![0; cmd.datasize as usize];
         buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
         buf.read_exact(&mut blob).unwrap();

@@ -11,7 +11,7 @@ use num_derive::FromPrimitive;
 
 use crate::{header::MachHeader, helpers::string_upto_null_terminator};
 
-use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
+use super::{LCLoadCommand, LoadCommandBase, Serialize};
 
 bitflags::bitflags! {
     #[repr(transparent)]
@@ -245,9 +245,9 @@ pub struct SegmentCommand32 {
     pub sects: Vec<Section32>,
 }
 
-impl<'a> ParseRegular<'a> for SegmentCommand32 {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> SegmentCommand32 {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, segname) = take(16usize)(cursor)?;
         let (_, segname) = string_upto_null_terminator(segname)?;
 
@@ -297,9 +297,9 @@ pub struct SegmentCommand64 {
     pub sections: Vec<Section64>,
 }
 
-impl<'a> ParseRegular<'a> for SegmentCommand64 {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> SegmentCommand64 {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, segname) = take(16usize)(cursor)?;
         let (_, segname) = string_upto_null_terminator(segname)?;
 

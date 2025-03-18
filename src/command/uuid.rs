@@ -1,9 +1,7 @@
 use nom::{number::complete::le_u128, IResult};
 use uuid::Uuid;
 
-use crate::header::MachHeader;
-
-use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
+use super::{LCLoadCommand, LoadCommandBase};
 
 #[derive(Debug)]
 pub struct UuidCommand {
@@ -12,9 +10,9 @@ pub struct UuidCommand {
     pub uuid: Uuid,
 }
 
-impl<'a> ParseRegular<'a> for UuidCommand {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> UuidCommand {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, uuid) = le_u128(cursor)?;
 
         Ok((

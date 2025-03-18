@@ -1,8 +1,6 @@
 use nom::{number::complete::le_u32, IResult};
 
-use crate::header::MachHeader;
-
-use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
+use super::{LCLoadCommand, LoadCommandBase};
 
 #[derive(Debug)]
 pub struct EncryptionInfoCommand {
@@ -13,9 +11,9 @@ pub struct EncryptionInfoCommand {
     pub cryptid: u32,
 }
 
-impl<'a> ParseRegular<'a> for EncryptionInfoCommand {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> EncryptionInfoCommand {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, cryptoff) = le_u32(cursor)?;
         let (cursor, cryptsize) = le_u32(cursor)?;
         let (cursor, cryptid) = le_u32(cursor)?;
@@ -43,9 +41,9 @@ pub struct EncryptionInfoCommand64 {
     pub pad: u32,
 }
 
-impl<'a> ParseRegular<'a> for EncryptionInfoCommand64 {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> EncryptionInfoCommand64 {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, cryptoff) = le_u32(cursor)?;
         let (cursor, cryptsize) = le_u32(cursor)?;
         let (cursor, cryptid) = le_u32(cursor)?;

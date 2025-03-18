@@ -1,8 +1,8 @@
 use nom::{number::complete::le_u32, IResult};
 
-use crate::{header::MachHeader, helpers::string_upto_null_terminator};
+use crate::helpers::string_upto_null_terminator;
 
-use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
+use super::{LCLoadCommand, LoadCommandBase};
 
 #[derive(Debug)]
 pub struct SubClientCommand {
@@ -11,9 +11,9 @@ pub struct SubClientCommand {
     pub client: String,
 }
 
-impl<'a> ParseRegular<'a> for SubClientCommand {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> SubClientCommand {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
 
         let (_, client_offset) = le_u32(cursor)?;
         let (cursor, client) = string_upto_null_terminator(&ldcmd[client_offset as usize..])?;

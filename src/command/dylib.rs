@@ -1,11 +1,8 @@
 use nom::{number::complete::le_u32, sequence, IResult};
 
-use crate::{
-    header::MachHeader,
-    helpers::{string_upto_null_terminator, version_string},
-};
+use crate::helpers::{string_upto_null_terminator, version_string};
 
-use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
+use super::{LCLoadCommand, LoadCommandBase};
 
 #[derive(Debug)]
 pub struct DylibCommand {
@@ -17,9 +14,9 @@ pub struct DylibCommand {
     pub compatibility_version: String,
 }
 
-impl<'a> ParseRegular<'a> for DylibCommand {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> DylibCommand {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
 
         let (_, (name_offset, timestamp, current_version, compatibility_version)) =
             sequence::tuple((le_u32, le_u32, le_u32, le_u32))(cursor)?;

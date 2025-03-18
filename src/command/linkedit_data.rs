@@ -11,8 +11,8 @@ pub struct LinkeditDataCommand {
 }
 
 impl LinkeditDataCommand {
-    pub fn parse<'a>(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+    pub fn parse<'a>(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, dataoff) = le_u32(cursor)?;
         let (cursor, datasize) = le_u32(cursor)?;
 

@@ -9,10 +9,7 @@ use nom::{
     sequence, IResult,
 };
 
-use super::{
-    symtab::Nlist64, LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved, Raw,
-    Resolved,
-};
+use super::{symtab::Nlist64, LCLoadCommand, LoadCommand, LoadCommandBase, Raw, Resolved};
 
 #[derive(Debug)]
 pub struct DysymtabCommand<A> {
@@ -49,8 +46,9 @@ impl<A> DysymtabCommand<A> {
     pub const INDIRECT_SYMBOL_ABS: u32 = 0x40000000;
 }
 
-impl<'a> ParseRaw<'a> for DysymtabCommand<Raw> {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl<'a> DysymtabCommand<Raw> {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (
             cursor,
             (
@@ -76,7 +74,7 @@ impl<'a> ParseRaw<'a> for DysymtabCommand<Raw> {
         ) = sequence::tuple((
             le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
             le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
-        ))(ldcmd)?;
+        ))(cursor)?;
 
         Ok((
             cursor,
@@ -111,14 +109,13 @@ impl<'a> ParseRaw<'a> for DysymtabCommand<Raw> {
     }
 }
 
-impl<'a, T: Seek + Read> ParseResolved<'a, T> for DysymtabCommand<Resolved> {
-    fn parse(
-        buf: &mut T,
-        base: LoadCommandBase,
+impl<'a> DysymtabCommand<Resolved> {
+    pub fn parse<T: Seek + Read>(
         ldcmd: &'a [u8],
+        buf: &mut T,
         prev_cmds: &Vec<LoadCommand<Resolved>>,
     ) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (
             cursor,
             (

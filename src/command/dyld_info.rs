@@ -14,10 +14,7 @@ use num_derive::FromPrimitive;
 
 use crate::helpers::{read_sleb, read_uleb, string_upto_null_terminator};
 
-use super::{
-    dyld_exports_trie::DyldExport, LCLoadCommand, LoadCommand, LoadCommandBase, ParseRaw,
-    ParseResolved, Raw, Resolved,
-};
+use super::{dyld_exports_trie::DyldExport, LCLoadCommand, LoadCommandBase, Raw, Resolved};
 
 #[derive(Debug, FromPrimitive, Clone, Copy)]
 pub enum RebaseType {
@@ -376,9 +373,9 @@ pub struct DyldInfoCommand<A> {
     phantom: PhantomData<A>,
 }
 
-impl<'a> ParseRaw<'a> for DyldInfoCommand<Raw> {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> DyldInfoCommand<Raw> {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (
             cursor,
             (
@@ -423,14 +420,9 @@ impl<'a> ParseRaw<'a> for DyldInfoCommand<Raw> {
     }
 }
 
-impl<'a, T: Read + Seek> ParseResolved<'a, T> for DyldInfoCommand<Resolved> {
-    fn parse(
-        buf: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> DyldInfoCommand<Resolved> {
+    pub fn parse<T: Read + Seek>(ldcmd: &'a [u8], buf: &mut T) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (
             cursor,
             (

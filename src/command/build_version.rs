@@ -2,9 +2,9 @@ use nom::{number::complete::le_u32, IResult};
 use nom_derive::{Nom, Parse};
 use strum_macros::{Display, EnumString};
 
-use crate::{header::MachHeader, helpers::version_string};
+use crate::helpers::version_string;
 
-use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
+use super::{LCLoadCommand, LoadCommandBase};
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Nom, EnumString, Display)]
@@ -75,9 +75,9 @@ pub struct BuildVersionCommand {
     pub tools: Vec<BuildToolVersion>,
 }
 
-impl<'a> ParseRegular<'a> for BuildVersionCommand {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> BuildVersionCommand {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, platform) = Platform::parse_le(cursor)?;
         let (cursor, minos) = le_u32(cursor)?;
         let (cursor, sdk) = le_u32(cursor)?;

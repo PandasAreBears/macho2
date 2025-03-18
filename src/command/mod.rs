@@ -77,31 +77,9 @@ pub struct Raw;
 #[derive(Debug)]
 
 pub struct Resolved;
-pub trait ParseResolved<'a, T: Seek + Read> {
-    fn parse(
-        buf: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        prev_cmds: &Vec<LoadCommand<Resolved>>,
-    ) -> IResult<&'a [u8], Self>
-    where
-        Self: Sized;
-}
 
-pub trait ParseRaw<'a> {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self>
-    where
-        Self: Sized;
-}
-
-pub trait ParseRegular<'a> {
-    fn parse(
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        header: &MachHeader,
-    ) -> IResult<&'a [u8], Self>
-    where
-        Self: Sized;
+pub trait Serialize {
+    fn serialize(&self) -> Vec<u8>;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -112,8 +90,8 @@ pub struct LoadCommandBase {
 
 impl LoadCommandBase {
     pub fn parse<'a>(bytes: &[u8]) -> IResult<&[u8], LoadCommandBase> {
-        let (push, cmd) = LCLoadCommand::parse_le(bytes)?;
-        let (_, cmdsize) = le_u32(push)?;
+        let (bytes, cmd) = LCLoadCommand::parse_le(bytes)?;
+        let (bytes, cmdsize) = le_u32(bytes)?;
 
         Ok((bytes, LoadCommandBase { cmd, cmdsize }))
     }
@@ -183,6 +161,12 @@ pub enum LCLoadCommand {
 
 impl LCLoadCommand {
     pub const LC_REQ_DYLD: u32 = 0x80000000;
+}
+
+impl Serialize for LCLoadCommand {
+    fn serialize(&self) -> Vec<u8> {
+        (*self as u32).to_le_bytes().to_vec()
+    }
 }
 
 #[derive(Debug)]
@@ -323,11 +307,11 @@ impl LoadCommand<Resolved> {
     {
         match base.cmd {
             LCLoadCommand::LcSegment => {
-                let (bytes, cmd) = SegmentCommand32::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SegmentCommand32::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::Segment32(cmd)))
             }
             LCLoadCommand::LcSegment64 => {
-                let (bytes, cmd) = SegmentCommand64::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SegmentCommand64::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::Segment64(cmd)))
             }
             LCLoadCommand::LcLoadDylib
@@ -336,7 +320,7 @@ impl LoadCommand<Resolved> {
             | LCLoadCommand::LcReexportDylib
             | LCLoadCommand::LcLazyLoadDylib
             | LCLoadCommand::LcLoadUpwardDylib => {
-                let (bytes, cmd) = DylibCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = DylibCommand::parse(ldcmd).unwrap();
                 match base.clone().cmd {
                     LCLoadCommand::LcLoadDylib => Ok((bytes, LoadCommand::LoadDylib(cmd))),
                     LCLoadCommand::LcIdDylib => Ok((bytes, LoadCommand::DylibId(cmd))),
@@ -350,16 +334,15 @@ impl LoadCommand<Resolved> {
                 }
             }
             LCLoadCommand::LcSymtab => {
-                let (bytes, cmd) =
-                    SymtabCommand::<Resolved>::parse(buf, base, ldcmd, prev_cmds).unwrap();
+                let (bytes, cmd) = SymtabCommand::<Resolved>::parse(ldcmd, buf).unwrap();
                 Ok((bytes, LoadCommand::Symtab(cmd)))
             }
             LCLoadCommand::LcSymseg => {
-                let (bytes, cmd) = SymsegCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SymsegCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::Symseg(cmd)))
             }
             LCLoadCommand::LcThread | LCLoadCommand::LcUnixThread => {
-                let (bytes, cmd) = ThreadCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = ThreadCommand::parse(ldcmd, *header.cputype()).unwrap();
                 match base.cmd {
                     LCLoadCommand::LcThread => Ok((bytes, LoadCommand::Thread(cmd))),
                     LCLoadCommand::LcUnixThread => Ok((bytes, LoadCommand::UnixThread(cmd))),
@@ -368,13 +351,13 @@ impl LoadCommand<Resolved> {
             }
             LCLoadCommand::LcDysymtab => {
                 let (bytes, cmd) =
-                    DysymtabCommand::<Resolved>::parse(buf, base, ldcmd, prev_cmds).unwrap();
+                    DysymtabCommand::<Resolved>::parse(ldcmd, buf, prev_cmds).unwrap();
                 Ok((bytes, LoadCommand::Dysymtab(cmd)))
             }
             LCLoadCommand::LcLoadDylinker
             | LCLoadCommand::LcIdDylinker
             | LCLoadCommand::LcDyldEnvironment => {
-                let (bytes, cmd) = DylinkerCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = DylinkerCommand::parse(ldcmd).unwrap();
                 match base.cmd {
                     LCLoadCommand::LcLoadDylinker => Ok((bytes, LoadCommand::LoadDylinker(cmd))),
                     LCLoadCommand::LcIdDylinker => Ok((bytes, LoadCommand::IdDylinker(cmd))),
@@ -385,11 +368,11 @@ impl LoadCommand<Resolved> {
                 }
             }
             LCLoadCommand::LcPreboundDylib => {
-                let (bytes, cmd) = PreboundDylibCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = PreboundDylibCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::PreboundDylib(cmd)))
             }
             LCLoadCommand::LcRoutines | LCLoadCommand::LcRoutines64 => {
-                let (bytes, cmd) = RoutinesCommand64::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = RoutinesCommand64::parse(ldcmd).unwrap();
                 match base.cmd {
                     LCLoadCommand::LcRoutines => Ok((bytes, LoadCommand::Routines(cmd))),
                     LCLoadCommand::LcRoutines64 => Ok((bytes, LoadCommand::Routines64(cmd))),
@@ -397,56 +380,51 @@ impl LoadCommand<Resolved> {
                 }
             }
             LCLoadCommand::LcSubFramework => {
-                let (bytes, cmd) = SubFrameworkCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SubFrameworkCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::SubFramework(cmd)))
             }
             LCLoadCommand::LcSubUmbrella => {
-                let (bytes, cmd) = SubUmbrellaCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SubUmbrellaCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::SubUmbrella(cmd)))
             }
             LCLoadCommand::LcSubClient => {
-                let (bytes, cmd) = SubClientCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SubClientCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::SubClient(cmd)))
             }
             LCLoadCommand::LcSubLibrary => {
-                let (bytes, cmd) = SubLibraryCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SubLibraryCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::SubLibrary(cmd)))
             }
             LCLoadCommand::LcTwolevelHints => {
-                let (bytes, cmd) = TwoLevelHintsCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = TwoLevelHintsCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::TwoLevelHints(cmd)))
             }
             LCLoadCommand::LcPrebindCksum => {
-                let (bytes, cmd) = PrebindCksumCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = PrebindCksumCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::PrebindCksum(cmd)))
             }
             LCLoadCommand::LcUuid => {
-                let (bytes, cmd) = UuidCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = UuidCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::UUID(cmd)))
             }
             LCLoadCommand::LcRpath => {
-                let (bytes, cmd) = RpathCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = RpathCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::Rpath(cmd)))
             }
             LCLoadCommand::LcFunctionStarts => {
-                let (bytes, cmd) =
-                    FunctionStartsCommand::<Resolved>::parse(buf, base, ldcmd, prev_cmds).unwrap();
+                let (bytes, cmd) = FunctionStartsCommand::<Resolved>::parse(ldcmd, buf).unwrap();
                 Ok((bytes, LoadCommand::FunctionStarts(cmd)))
             }
             LCLoadCommand::LcCodeSignature => {
-                let (bytes, cmd) =
-                    CodeSignCommand::<Resolved>::parse(buf, base, ldcmd, prev_cmds).unwrap();
+                let (bytes, cmd) = CodeSignCommand::<Resolved>::parse(ldcmd, buf).unwrap();
                 Ok((bytes, LoadCommand::CodeSignature(cmd)))
             }
             LCLoadCommand::LcDyldChainedFixups => {
-                let (bytes, cmd) =
-                    DyldChainedFixupCommand::<Resolved>::parse(buf, base, ldcmd, prev_cmds)
-                        .unwrap();
+                let (bytes, cmd) = DyldChainedFixupCommand::<Resolved>::parse(ldcmd, buf).unwrap();
                 Ok((bytes, LoadCommand::DyldChainedFixups(cmd)))
             }
             LCLoadCommand::LcDyldExportsTrie => {
-                let (bytes, cmd) =
-                    DyldExportsTrie::<Resolved>::parse(buf, base, ldcmd, prev_cmds).unwrap();
+                let (bytes, cmd) = DyldExportsTrie::<Resolved>::parse(ldcmd, buf).unwrap();
                 Ok((bytes, LoadCommand::DyldExportsTrie(cmd)))
             }
             LCLoadCommand::LcSegmentSplitInfo
@@ -454,7 +432,7 @@ impl LoadCommand<Resolved> {
             | LCLoadCommand::LcDylibCodeSignDrs
             | LCLoadCommand::LcLinkerOptimizationHint
             | LCLoadCommand::LcAtomInfo => {
-                let (bytes, cmd) = LinkeditDataCommand::parse(base, ldcmd).unwrap();
+                let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd).unwrap();
                 match base.cmd {
                     LCLoadCommand::LcSegmentSplitInfo => {
                         Ok((bytes, LoadCommand::SegmentSplitInfo(cmd)))
@@ -471,12 +449,11 @@ impl LoadCommand<Resolved> {
                 }
             }
             LCLoadCommand::LcEncryptionInfo => {
-                let (bytes, cmd) = EncryptionInfoCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = EncryptionInfoCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::EncryptionInfo(cmd)))
             }
             LCLoadCommand::LcDyldInfo | LCLoadCommand::LcDyldInfoOnly => {
-                let (bytes, cmd) =
-                    DyldInfoCommand::<Resolved>::parse(buf, base, ldcmd, prev_cmds).unwrap();
+                let (bytes, cmd) = DyldInfoCommand::<Resolved>::parse(ldcmd, buf).unwrap();
                 match base.cmd {
                     LCLoadCommand::LcDyldInfo => Ok((bytes, LoadCommand::DyldInfo(cmd))),
                     LCLoadCommand::LcDyldInfoOnly => Ok((bytes, LoadCommand::DyldInfoOnly(cmd))),
@@ -487,7 +464,7 @@ impl LoadCommand<Resolved> {
             | LCLoadCommand::LcVersionMinIphoneos
             | LCLoadCommand::LcVersionMinTvos
             | LCLoadCommand::LcVersionMinWatchos => {
-                let (bytes, cmd) = VersionMinCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = VersionMinCommand::parse(ldcmd).unwrap();
                 match base.cmd {
                     LCLoadCommand::LcVersionMinMacosx => {
                         Ok((bytes, LoadCommand::VersionMinMacosx(cmd)))
@@ -505,31 +482,31 @@ impl LoadCommand<Resolved> {
                 }
             }
             LCLoadCommand::LcMain => {
-                let (bytes, cmd) = EntryPointCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = EntryPointCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::Main(cmd)))
             }
             LCLoadCommand::LcSourceVersion => {
-                let (bytes, cmd) = SourceVersionCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SourceVersionCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::SourceVersion(cmd)))
             }
             LCLoadCommand::LcEncryptionInfo64 => {
-                let (bytes, cmd) = EncryptionInfoCommand64::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = EncryptionInfoCommand64::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::EncryptionInfo64(cmd)))
             }
             LCLoadCommand::LcLinkerOption => {
-                let (bytes, cmd) = LinkerOptionCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = LinkerOptionCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::LinkerOption(cmd)))
             }
             LCLoadCommand::LcNote => {
-                let (bytes, cmd) = NoteCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = NoteCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::Note(cmd)))
             }
             LCLoadCommand::LcBuildVersion => {
-                let (bytes, cmd) = BuildVersionCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = BuildVersionCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::BuildVersion(cmd)))
             }
             LCLoadCommand::LcFilesetEntry => {
-                let (bytes, cmd) = FilesetEntryCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = FilesetEntryCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::FilesetEntry(cmd)))
             }
             LCLoadCommand::None => Ok((ldcmd, LoadCommand::None)),
@@ -562,11 +539,11 @@ impl LoadCommand<Raw> {
     ) -> IResult<&'a [u8], Self> {
         match base.cmd {
             LCLoadCommand::LcSegment => {
-                let (bytes, cmd) = SegmentCommand32::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SegmentCommand32::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::Segment32(cmd)))
             }
             LCLoadCommand::LcSegment64 => {
-                let (bytes, cmd) = SegmentCommand64::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SegmentCommand64::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::Segment64(cmd)))
             }
             LCLoadCommand::LcLoadDylib
@@ -575,7 +552,7 @@ impl LoadCommand<Raw> {
             | LCLoadCommand::LcReexportDylib
             | LCLoadCommand::LcLazyLoadDylib
             | LCLoadCommand::LcLoadUpwardDylib => {
-                let (bytes, cmd) = DylibCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = DylibCommand::parse(ldcmd).unwrap();
                 match base.clone().cmd {
                     LCLoadCommand::LcLoadDylib => Ok((bytes, LoadCommand::LoadDylib(cmd))),
                     LCLoadCommand::LcIdDylib => Ok((bytes, LoadCommand::DylibId(cmd))),
@@ -589,15 +566,15 @@ impl LoadCommand<Raw> {
                 }
             }
             LCLoadCommand::LcSymtab => {
-                let (bytes, cmd) = SymtabCommand::<Raw>::parse(base, ldcmd).unwrap();
+                let (bytes, cmd) = SymtabCommand::<Raw>::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::Symtab(cmd)))
             }
             LCLoadCommand::LcSymseg => {
-                let (bytes, cmd) = SymsegCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SymsegCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::Symseg(cmd)))
             }
             LCLoadCommand::LcThread | LCLoadCommand::LcUnixThread => {
-                let (bytes, cmd) = ThreadCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = ThreadCommand::parse(ldcmd, *header.cputype()).unwrap();
                 match base.cmd {
                     LCLoadCommand::LcThread => Ok((bytes, LoadCommand::Thread(cmd))),
                     LCLoadCommand::LcUnixThread => Ok((bytes, LoadCommand::UnixThread(cmd))),
@@ -605,13 +582,13 @@ impl LoadCommand<Raw> {
                 }
             }
             LCLoadCommand::LcDysymtab => {
-                let (bytes, cmd) = DysymtabCommand::<Raw>::parse(base, ldcmd).unwrap();
+                let (bytes, cmd) = DysymtabCommand::<Raw>::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::Dysymtab(cmd)))
             }
             LCLoadCommand::LcLoadDylinker
             | LCLoadCommand::LcIdDylinker
             | LCLoadCommand::LcDyldEnvironment => {
-                let (bytes, cmd) = DylinkerCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = DylinkerCommand::parse(ldcmd).unwrap();
                 match base.cmd {
                     LCLoadCommand::LcLoadDylinker => Ok((bytes, LoadCommand::LoadDylinker(cmd))),
                     LCLoadCommand::LcIdDylinker => Ok((bytes, LoadCommand::IdDylinker(cmd))),
@@ -622,11 +599,11 @@ impl LoadCommand<Raw> {
                 }
             }
             LCLoadCommand::LcPreboundDylib => {
-                let (bytes, cmd) = PreboundDylibCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = PreboundDylibCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::PreboundDylib(cmd)))
             }
             LCLoadCommand::LcRoutines | LCLoadCommand::LcRoutines64 => {
-                let (bytes, cmd) = RoutinesCommand64::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = RoutinesCommand64::parse(ldcmd).unwrap();
                 match base.cmd {
                     LCLoadCommand::LcRoutines => Ok((bytes, LoadCommand::Routines(cmd))),
                     LCLoadCommand::LcRoutines64 => Ok((bytes, LoadCommand::Routines64(cmd))),
@@ -634,51 +611,51 @@ impl LoadCommand<Raw> {
                 }
             }
             LCLoadCommand::LcSubFramework => {
-                let (bytes, cmd) = SubFrameworkCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SubFrameworkCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::SubFramework(cmd)))
             }
             LCLoadCommand::LcSubUmbrella => {
-                let (bytes, cmd) = SubUmbrellaCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SubUmbrellaCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::SubUmbrella(cmd)))
             }
             LCLoadCommand::LcSubClient => {
-                let (bytes, cmd) = SubClientCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SubClientCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::SubClient(cmd)))
             }
             LCLoadCommand::LcSubLibrary => {
-                let (bytes, cmd) = SubLibraryCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SubLibraryCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::SubLibrary(cmd)))
             }
             LCLoadCommand::LcTwolevelHints => {
-                let (bytes, cmd) = TwoLevelHintsCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = TwoLevelHintsCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::TwoLevelHints(cmd)))
             }
             LCLoadCommand::LcPrebindCksum => {
-                let (bytes, cmd) = PrebindCksumCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = PrebindCksumCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::PrebindCksum(cmd)))
             }
             LCLoadCommand::LcUuid => {
-                let (bytes, cmd) = UuidCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = UuidCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::UUID(cmd)))
             }
             LCLoadCommand::LcRpath => {
-                let (bytes, cmd) = RpathCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = RpathCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::Rpath(cmd)))
             }
             LCLoadCommand::LcFunctionStarts => {
-                let (bytes, cmd) = FunctionStartsCommand::<Raw>::parse(base, ldcmd).unwrap();
+                let (bytes, cmd) = FunctionStartsCommand::<Raw>::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::FunctionStarts(cmd)))
             }
             LCLoadCommand::LcCodeSignature => {
-                let (bytes, cmd) = CodeSignCommand::<Raw>::parse(base, ldcmd).unwrap();
+                let (bytes, cmd) = CodeSignCommand::<Raw>::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::CodeSignature(cmd)))
             }
             LCLoadCommand::LcDyldChainedFixups => {
-                let (bytes, cmd) = DyldChainedFixupCommand::<Raw>::parse(base, ldcmd).unwrap();
+                let (bytes, cmd) = DyldChainedFixupCommand::<Raw>::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::DyldChainedFixups(cmd)))
             }
             LCLoadCommand::LcDyldExportsTrie => {
-                let (bytes, cmd) = DyldExportsTrie::<Raw>::parse(base, ldcmd).unwrap();
+                let (bytes, cmd) = DyldExportsTrie::<Raw>::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::DyldExportsTrie(cmd)))
             }
             LCLoadCommand::LcSegmentSplitInfo
@@ -686,7 +663,7 @@ impl LoadCommand<Raw> {
             | LCLoadCommand::LcDylibCodeSignDrs
             | LCLoadCommand::LcLinkerOptimizationHint
             | LCLoadCommand::LcAtomInfo => {
-                let (bytes, cmd) = LinkeditDataCommand::parse(base, ldcmd).unwrap();
+                let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd).unwrap();
                 match base.cmd {
                     LCLoadCommand::LcSegmentSplitInfo => {
                         Ok((bytes, LoadCommand::SegmentSplitInfo(cmd)))
@@ -703,11 +680,11 @@ impl LoadCommand<Raw> {
                 }
             }
             LCLoadCommand::LcEncryptionInfo => {
-                let (bytes, cmd) = EncryptionInfoCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = EncryptionInfoCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::EncryptionInfo(cmd)))
             }
             LCLoadCommand::LcDyldInfo | LCLoadCommand::LcDyldInfoOnly => {
-                let (bytes, cmd) = DyldInfoCommand::<Raw>::parse(base, ldcmd).unwrap();
+                let (bytes, cmd) = DyldInfoCommand::<Raw>::parse(ldcmd).unwrap();
                 match base.cmd {
                     LCLoadCommand::LcDyldInfo => Ok((bytes, LoadCommand::DyldInfo(cmd))),
                     LCLoadCommand::LcDyldInfoOnly => Ok((bytes, LoadCommand::DyldInfoOnly(cmd))),
@@ -718,7 +695,7 @@ impl LoadCommand<Raw> {
             | LCLoadCommand::LcVersionMinIphoneos
             | LCLoadCommand::LcVersionMinTvos
             | LCLoadCommand::LcVersionMinWatchos => {
-                let (bytes, cmd) = VersionMinCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = VersionMinCommand::parse(ldcmd).unwrap();
                 match base.cmd {
                     LCLoadCommand::LcVersionMinMacosx => {
                         Ok((bytes, LoadCommand::VersionMinMacosx(cmd)))
@@ -736,31 +713,31 @@ impl LoadCommand<Raw> {
                 }
             }
             LCLoadCommand::LcMain => {
-                let (bytes, cmd) = EntryPointCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = EntryPointCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::Main(cmd)))
             }
             LCLoadCommand::LcSourceVersion => {
-                let (bytes, cmd) = SourceVersionCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = SourceVersionCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::SourceVersion(cmd)))
             }
             LCLoadCommand::LcEncryptionInfo64 => {
-                let (bytes, cmd) = EncryptionInfoCommand64::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = EncryptionInfoCommand64::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::EncryptionInfo64(cmd)))
             }
             LCLoadCommand::LcLinkerOption => {
-                let (bytes, cmd) = LinkerOptionCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = LinkerOptionCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::LinkerOption(cmd)))
             }
             LCLoadCommand::LcNote => {
-                let (bytes, cmd) = NoteCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = NoteCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::Note(cmd)))
             }
             LCLoadCommand::LcBuildVersion => {
-                let (bytes, cmd) = BuildVersionCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = BuildVersionCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::BuildVersion(cmd)))
             }
             LCLoadCommand::LcFilesetEntry => {
-                let (bytes, cmd) = FilesetEntryCommand::parse(base, ldcmd, header).unwrap();
+                let (bytes, cmd) = FilesetEntryCommand::parse(ldcmd).unwrap();
                 Ok((bytes, LoadCommand::FilesetEntry(cmd)))
             }
             LCLoadCommand::None => Ok((ldcmd, LoadCommand::None)),

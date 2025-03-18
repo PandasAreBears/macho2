@@ -7,10 +7,7 @@ use nom::{error::Error, number::complete::le_u8, IResult};
 
 use crate::helpers::{read_uleb, string_upto_null_terminator};
 
-use super::{
-    linkedit_data::LinkeditDataCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved, Raw,
-    Resolved,
-};
+use super::{linkedit_data::LinkeditDataCommand, Raw, Resolved};
 
 bitflags::bitflags! {
     #[repr(transparent)]
@@ -107,9 +104,9 @@ pub struct DyldExportsTrie<A> {
     phantom: PhantomData<A>,
 }
 
-impl<'a> ParseRaw<'a> for DyldExportsTrie<Raw> {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
-        let (bytes, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
+impl<'a> DyldExportsTrie<Raw> {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd)?;
         Ok((
             bytes,
             DyldExportsTrie {
@@ -121,14 +118,9 @@ impl<'a> ParseRaw<'a> for DyldExportsTrie<Raw> {
     }
 }
 
-impl<'a, T: Seek + Read> ParseResolved<'a, T> for DyldExportsTrie<Resolved> {
-    fn parse(
-        buf: &mut T,
-        base: LoadCommandBase,
-        ldcmd: &'a [u8],
-        _: &Vec<LoadCommand<Resolved>>,
-    ) -> IResult<&'a [u8], Self> {
-        let (bytes, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
+impl<'a> DyldExportsTrie<Resolved> {
+    pub fn parse<T: Seek + Read>(ldcmd: &'a [u8], buf: &mut T) -> IResult<&'a [u8], Self> {
+        let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd)?;
         let mut blob = vec![0; cmd.datasize as usize];
         buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
         buf.read_exact(&mut blob).unwrap();

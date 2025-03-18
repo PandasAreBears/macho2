@@ -1,8 +1,6 @@
 use nom::{number::complete::le_u32, IResult};
 
-use crate::header::MachHeader;
-
-use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
+use super::{LCLoadCommand, LoadCommandBase};
 
 #[derive(Debug)]
 pub struct PrebindCksumCommand {
@@ -11,9 +9,9 @@ pub struct PrebindCksumCommand {
     pub cksum: u32,
 }
 
-impl<'a> ParseRegular<'a> for PrebindCksumCommand {
-    fn parse(base: LoadCommandBase, ldcmd: &'a [u8], _: &MachHeader) -> IResult<&'a [u8], Self> {
-        let (cursor, _) = LoadCommandBase::skip(ldcmd)?;
+impl<'a> PrebindCksumCommand {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, cksum) = le_u32(cursor)?;
 
         Ok((
