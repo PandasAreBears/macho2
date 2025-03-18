@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use crate::command::dyld_chained_fixup::DyldFixup;
 use crate::command::segment::SegmentCommand64;
-use crate::command::{LoadCommand, Raw, Resolved};
+use crate::command::{LoadCommand, Raw, Resolved, Serialize};
 use crate::fat::{FatArch, FatHeader, FatMagic};
 use crate::file_subset::FileSubset;
 use crate::header::{MHMagic, MachHeader};
@@ -250,6 +250,15 @@ impl<T: Seek + Read, A> MachO<T, A> {
         Ok(String::from_utf8(string_data).map_err(|_| MachOErr {
             detail: "Unable to convert bytes to UTF8 string".to_string(),
         })?)
+    }
+
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend(self.header.serialize());
+        for lc in &self.load_commands {
+            bytes.extend(lc.serialize());
+        }
+        bytes
     }
 }
 
