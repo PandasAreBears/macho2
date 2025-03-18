@@ -15,9 +15,9 @@ use nom::{
 use num_derive::FromPrimitive;
 
 use crate::{
-    commands::LinkeditDataCommand,
+    command::linkedit_data::LinkeditDataCommand,
+    command::{LoadCommand, LoadCommandBase, ParseRaw, ParseResolved, Raw, Resolved},
     helpers::string_upto_null_terminator,
-    load_command::{LoadCommand, LoadCommandBase, ParseRaw, ParseResolved, Raw, Resolved},
 };
 
 bitflags::bitflags! {

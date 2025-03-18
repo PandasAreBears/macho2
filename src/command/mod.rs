@@ -1,25 +1,32 @@
-use std::io::{Read, Seek, SeekFrom};
+pub mod codesign;
+pub mod entry_point;
+pub mod fileset_entry;
+pub mod function_starts;
+pub mod linkedit_data;
+pub mod linker_option;
+pub mod note;
+pub mod prebind_cksum;
+pub mod routines;
+pub mod rpath;
+pub mod source_version;
+pub mod symseg;
+pub mod thread;
+pub mod two_level_hints;
+pub mod uuid;
 
-use crate::codesign::CodeSignCommand;
-use crate::commands::{
-    BuildVersionCommand, EncryptionInfoCommand, EncryptionInfoCommand64, EntryPointCommand,
-    FilesetEntryCommand, FunctionStartsCommand, LinkeditDataCommand, LinkerOptionCommand,
-    NoteCommand, PrebindCksumCommand, RoutinesCommand64, RpathCommand, SourceVersionCommand,
-    SymsegCommand, ThreadCommand, TwoLevelHintsCommand, UuidCommand, VersionMinCommand,
-};
+use crate::command::codesign::CodeSignCommand;
 use crate::dyldinfo::{DyldChainedFixupCommand, DyldExportsTrie, DyldInfoCommand};
 use crate::dylib::{
     DylibCommand, DylinkerCommand, PreboundDylibCommand, SubClientCommand, SubFrameworkCommand,
     SubLibraryCommand, SubUmbrellaCommand,
 };
+use crate::header::MachHeader;
 use crate::macho::{MachOErr, MachOResult};
 use crate::segment::{SegmentCommand32, SegmentCommand64};
 use crate::symtab::{DysymtabCommand, SymtabCommand};
-
 use nom::{bytes::complete::take, number::complete::le_u32, IResult};
 use nom_derive::{Nom, Parse};
-
-use crate::header::MachHeader;
+use std::io::{Read, Seek, SeekFrom};
 
 /// ZSTs to define the load command parsing behaviour.
 #[derive(Debug)]
@@ -52,6 +59,26 @@ pub trait ParseRegular<'a> {
     ) -> IResult<&'a [u8], Self>
     where
         Self: Sized;
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LoadCommandBase {
+    pub cmd: LCLoadCommand,
+    pub cmdsize: u32,
+}
+
+impl LoadCommandBase {
+    pub fn parse<'a>(bytes: &[u8]) -> IResult<&[u8], LoadCommandBase> {
+        let (push, cmd) = LCLoadCommand::parse_le(bytes)?;
+        let (_, cmdsize) = le_u32(push)?;
+
+        Ok((bytes, LoadCommandBase { cmd, cmdsize }))
+    }
+
+    pub fn skip(bytes: &[u8]) -> IResult<&[u8], ()> {
+        let (remaining, _) = take(8usize)(bytes)?;
+        Ok((remaining, ()))
+    }
 }
 
 #[repr(u32)]
@@ -113,26 +140,6 @@ pub enum LCLoadCommand {
 
 impl LCLoadCommand {
     pub const LC_REQ_DYLD: u32 = 0x80000000;
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct LoadCommandBase {
-    pub cmd: LCLoadCommand,
-    pub cmdsize: u32,
-}
-
-impl LoadCommandBase {
-    pub fn parse<'a>(bytes: &[u8]) -> IResult<&[u8], LoadCommandBase> {
-        let (push, cmd) = LCLoadCommand::parse_le(bytes)?;
-        let (_, cmdsize) = le_u32(push)?;
-
-        Ok((bytes, LoadCommandBase { cmd, cmdsize }))
-    }
-
-    pub fn skip(bytes: &[u8]) -> IResult<&[u8], ()> {
-        let (remaining, _) = take(8usize)(bytes)?;
-        Ok((remaining, ()))
-    }
 }
 
 #[derive(Debug)]

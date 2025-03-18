@@ -1,4 +1,4 @@
-pub mod codesign;
+pub mod command;
 pub mod commands;
 pub mod dyldinfo;
 pub mod dylib;
@@ -7,7 +7,6 @@ pub mod file_subset;
 pub mod fixups;
 pub mod header;
 mod helpers;
-pub mod load_command;
 pub mod machine;
 pub mod macho;
 pub mod objc;
