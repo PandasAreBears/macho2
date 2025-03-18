@@ -9,11 +9,9 @@ use nom::{
 };
 use num_derive::FromPrimitive;
 
-use crate::{
-    header::MachHeader,
-    helpers::string_upto_null_terminator,
-    load_command::{LCLoadCommand, LoadCommandBase, ParseRegular},
-};
+use crate::{header::MachHeader, helpers::string_upto_null_terminator};
+
+use super::{LCLoadCommand, LoadCommandBase, ParseRegular};
 
 bitflags::bitflags! {
     #[repr(transparent)]

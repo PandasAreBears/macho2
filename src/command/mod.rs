@@ -1,4 +1,13 @@
+pub mod build_version;
 pub mod codesign;
+pub mod dyld_chained_fixup;
+pub mod dyld_exports_trie;
+pub mod dyld_info;
+pub mod dylib;
+pub mod dylib_use;
+pub mod dylinker;
+pub mod dysymtab;
+pub mod encryption_info;
 pub mod entry_point;
 pub mod fileset_entry;
 pub mod function_starts;
@@ -6,27 +15,60 @@ pub mod linkedit_data;
 pub mod linker_option;
 pub mod note;
 pub mod prebind_cksum;
+pub mod prebound_dylib;
 pub mod routines;
 pub mod rpath;
+pub mod segment;
 pub mod source_version;
+pub mod sub_client;
+pub mod sub_framework;
+pub mod sub_library;
+pub mod sub_umbrella;
 pub mod symseg;
+pub mod symtab;
 pub mod thread;
 pub mod two_level_hints;
 pub mod uuid;
+pub mod version_min;
 
-use crate::command::codesign::CodeSignCommand;
-use crate::dyldinfo::{DyldChainedFixupCommand, DyldExportsTrie, DyldInfoCommand};
-use crate::dylib::{
-    DylibCommand, DylinkerCommand, PreboundDylibCommand, SubClientCommand, SubFrameworkCommand,
-    SubLibraryCommand, SubUmbrellaCommand,
-};
+use std::io::{Read, Seek, SeekFrom};
+
 use crate::header::MachHeader;
 use crate::macho::{MachOErr, MachOResult};
-use crate::segment::{SegmentCommand32, SegmentCommand64};
-use crate::symtab::{DysymtabCommand, SymtabCommand};
 use nom::{bytes::complete::take, number::complete::le_u32, IResult};
 use nom_derive::{Nom, Parse};
-use std::io::{Read, Seek, SeekFrom};
+
+use build_version::BuildVersionCommand;
+use codesign::CodeSignCommand;
+use dyld_chained_fixup::DyldChainedFixupCommand;
+use dyld_exports_trie::DyldExportsTrie;
+use dyld_info::DyldInfoCommand;
+use dylib::DylibCommand;
+use dylinker::DylinkerCommand;
+use dysymtab::DysymtabCommand;
+use encryption_info::{EncryptionInfoCommand, EncryptionInfoCommand64};
+use entry_point::EntryPointCommand;
+use fileset_entry::FilesetEntryCommand;
+use function_starts::FunctionStartsCommand;
+use linkedit_data::LinkeditDataCommand;
+use linker_option::LinkerOptionCommand;
+use note::NoteCommand;
+use prebind_cksum::PrebindCksumCommand;
+use prebound_dylib::PreboundDylibCommand;
+use routines::RoutinesCommand64;
+use rpath::RpathCommand;
+use segment::{SegmentCommand32, SegmentCommand64};
+use source_version::SourceVersionCommand;
+use sub_client::SubClientCommand;
+use sub_framework::SubFrameworkCommand;
+use sub_library::SubLibraryCommand;
+use sub_umbrella::SubUmbrellaCommand;
+use symseg::SymsegCommand;
+use symtab::SymtabCommand;
+use thread::ThreadCommand;
+use two_level_hints::TwoLevelHintsCommand;
+use uuid::UuidCommand;
+use version_min::VersionMinCommand;
 
 /// ZSTs to define the load command parsing behaviour.
 #[derive(Debug)]

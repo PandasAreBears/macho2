@@ -1,14 +1,8 @@
 pub mod command;
-pub mod commands;
-pub mod dyldinfo;
-pub mod dylib;
 pub mod fat;
 pub mod file_subset;
-pub mod fixups;
 pub mod header;
 mod helpers;
 pub mod machine;
 pub mod macho;
 pub mod objc;
-pub mod segment;
-pub mod symtab;

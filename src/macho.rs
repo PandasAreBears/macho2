@@ -2,14 +2,14 @@ use std::error;
 use std::io::{Read, Seek, SeekFrom};
 use std::marker::PhantomData;
 
+use crate::command::dyld_chained_fixup::DyldFixup;
+use crate::command::segment::SegmentCommand64;
+use crate::command::{LoadCommand, Raw, Resolved};
 use crate::fat::{FatArch, FatHeader, FatMagic};
 use crate::file_subset::FileSubset;
-use crate::fixups::DyldFixup;
 use crate::header::{MHMagic, MachHeader};
 
-use crate::load_command::{LoadCommand, Raw, Resolved};
 use crate::machine;
-use crate::segment::SegmentCommand64;
 use std::fmt;
 
 #[derive(Debug)]

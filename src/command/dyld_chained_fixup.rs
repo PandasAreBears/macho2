@@ -1,12 +1,24 @@
-use std::io::{Read, Seek, SeekFrom};
+use std::{
+    io::{Read, Seek, SeekFrom},
+    marker::PhantomData,
+};
 
 use bitfield::bitfield;
+use nom::{
+    error::{Error, ErrorKind},
+    multi,
+    number::complete::{le_u16, le_u32, le_u64},
+    Err::Failure,
+    IResult, Parser,
+};
 use num::FromPrimitive;
 use num_derive::FromPrimitive;
 
-use crate::{
-    dyldinfo::{DyldChainedImport, DyldPointerFormat, DyldStartsInSegment},
-    load_command::{LoadCommand, Resolved},
+use crate::helpers::string_upto_null_terminator;
+
+use super::{
+    linkedit_data::LinkeditDataCommand, LoadCommand, LoadCommandBase, ParseRaw, ParseResolved, Raw,
+    Resolved,
 };
 
 #[derive(Debug, FromPrimitive, Clone)]
@@ -757,6 +769,248 @@ impl DyldPointerFixup {
     }
 }
 
+#[derive(Debug, FromPrimitive)]
+pub enum DyldSymbolsFormat {
+    Uncompressed = 0,
+    Zlib = 1,
+}
+
+impl DyldSymbolsFormat {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], DyldSymbolsFormat> {
+        let (bytes, value) = le_u32(bytes)?;
+        match num::FromPrimitive::from_u32(value) {
+            Some(format) => Ok((bytes, format)),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
+        }
+    }
+}
+
+#[derive(Debug, FromPrimitive)]
+pub enum DyldImportFormat {
+    Import = 1,
+    ImportAddend = 2,
+    ImportAddend64 = 3,
+}
+
+impl DyldImportFormat {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], DyldImportFormat> {
+        let (bytes, value) = le_u32(bytes)?;
+        match num::FromPrimitive::from_u32(value) {
+            Some(format) => Ok((bytes, format)),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
+        }
+    }
+}
+
+bitfield! {
+    struct DyldChainedImportBF(u32);
+    impl Debug;
+    u32;
+    ordinal, set_ordinal: 7, 0;
+    weak, set_weak: 8, 8;
+    name_offset, set_name_offset: 31, 9;
+}
+
+#[derive(Debug)]
+pub struct DyldChainedImport {
+    pub ordinal: u8,
+    pub is_weak: bool,
+    pub name: String,
+}
+
+impl DyldChainedImport {
+    pub fn parse<'a>(bytes: &'a [u8], symbols: &[u8]) -> IResult<&'a [u8], DyldChainedImport> {
+        let (bytes, value) = le_u32(bytes)?;
+        let bf = DyldChainedImportBF(value);
+
+        let name = string_upto_null_terminator(&symbols[bf.name_offset().to_le() as usize..])
+            .unwrap()
+            .1;
+
+        Ok((
+            bytes,
+            DyldChainedImport {
+                ordinal: bf.ordinal().to_le() as u8,
+                is_weak: bf.weak().to_le() != 0,
+                name,
+            },
+        ))
+    }
+}
+
+#[derive(Debug)]
+pub struct DyldStartsInSegment {
+    pub size: u32,
+    pub page_size: u16,
+    pub pointer_format: DyldPointerFormat,
+    pub segment_offset: u64,
+    pub max_valid_pointer: u32,
+    pub page_count: u16,
+    pub page_start: Vec<u16>,
+}
+
+impl DyldStartsInSegment {
+    pub const DYLD_CHAINED_PTR_START_NONE: u16 = 0xffff;
+    pub const DYLD_CHAINED_PTR_START_MULTI: u16 = 0x8000;
+
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], DyldStartsInSegment> {
+        let (bytes, size) = le_u32(bytes)?;
+        let (bytes, page_size) = le_u16(bytes)?;
+        let (bytes, pointer_format) = DyldPointerFormat::parse(bytes)?;
+        let (bytes, segment_offset) = le_u64(bytes)?;
+        let (bytes, max_valid_pointer) = le_u32(bytes)?;
+        let (mut bytes, page_count) = le_u16(bytes)?;
+
+        let mut page_start = vec![];
+        for _ in 0..page_count {
+            if bytes.is_empty() {
+                // TODO: e.g. /usr/lib/dyld
+                eprintln!("Ran out of bytes while parsing DyldStartsInSegment");
+                break;
+            }
+            let (cursor, start) = le_u16::<_, Error<_>>(bytes).unwrap();
+            bytes = cursor;
+            if Self::DYLD_CHAINED_PTR_START_NONE == start {
+                break;
+            }
+            if Self::DYLD_CHAINED_PTR_START_MULTI == start {
+                println!("DYLD_CHAINED_PTR_START_MULTI hit. TODO: idk what to do here.");
+                break;
+            }
+            page_start.push(start);
+        }
+
+        Ok((
+            bytes,
+            DyldStartsInSegment {
+                size,
+                page_size,
+                pointer_format,
+                segment_offset,
+                max_valid_pointer,
+                page_count,
+                page_start,
+            },
+        ))
+    }
+}
+
+#[derive(Debug)]
+pub struct DyldStartsInImage {
+    pub seg_count: u32,
+    pub seg_info_offset: Vec<u32>,
+    pub seg_starts: Vec<DyldStartsInSegment>,
+}
+
+impl DyldStartsInImage {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], DyldStartsInImage> {
+        let (cursor, seg_count) = le_u32(bytes)?;
+        let (_, seg_info_offset) = multi::count(le_u32, seg_count as usize).parse(cursor)?;
+
+        let mut seg_starts = vec![];
+        for offset in &seg_info_offset {
+            // if the offset == 0 then there's no fixups for this segment... skip
+            if *offset == 0 {
+                continue;
+            }
+            let (_, seg_start) = DyldStartsInSegment::parse(&bytes[*offset as usize..])?;
+            seg_starts.push(seg_start);
+        }
+
+        Ok((
+            cursor,
+            DyldStartsInImage {
+                seg_count,
+                seg_info_offset,
+                seg_starts,
+            },
+        ))
+    }
+}
+
+#[repr(u16)]
+#[derive(Debug, FromPrimitive, Clone, Copy)]
+pub enum DyldPointerFormat {
+    Arm64e = 1,
+    Ptr64 = 2,
+    Ptr32 = 3,
+    Ptr32Cache = 4,
+    Ptr32Firmware = 5,
+    Ptr64Offset = 6,
+    Arm64eKernel = 7,
+    Ptr64KernelCache = 8,
+    Arm64eUserland = 9,
+    Arm64eFirmware = 10,
+    X86_64KernelCache = 11,
+    Arm64eUserland24 = 12,
+    Arm64eSharedCache = 13,
+}
+
+impl DyldPointerFormat {
+    pub const DYLD_POINTER_MASK: u16 = 0xFF;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], DyldPointerFormat> {
+        let (bytes, value) = le_u16(bytes)?;
+        match num::FromPrimitive::from_u16(value & Self::DYLD_POINTER_MASK) {
+            Some(format) => Ok((bytes, format)),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
+        }
+    }
+
+    pub fn stride(self) -> u64 {
+        match self {
+            DyldPointerFormat::Arm64e => 8,
+            DyldPointerFormat::Arm64eUserland24 => 8,
+            DyldPointerFormat::Arm64eUserland => 8,
+            DyldPointerFormat::Arm64eSharedCache => 4,
+            DyldPointerFormat::Ptr64 => 4,
+            DyldPointerFormat::Ptr32 => 4,
+            DyldPointerFormat::Ptr32Cache => 4,
+            DyldPointerFormat::Ptr32Firmware => 4,
+            DyldPointerFormat::Ptr64Offset => 4,
+            DyldPointerFormat::Arm64eKernel => 4,
+            DyldPointerFormat::Ptr64KernelCache => 4,
+            DyldPointerFormat::Arm64eFirmware => 4,
+            DyldPointerFormat::X86_64KernelCache => 4,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct DyldChainedFixupsHeader {
+    pub fixups_version: u32,
+    pub starts_offset: u32,
+    pub imports_offset: u32,
+    pub symbols_offset: u32,
+    pub imports_count: u32,
+    pub imports_format: DyldImportFormat,
+    pub symbols_format: DyldSymbolsFormat,
+}
+
+impl DyldChainedFixupsHeader {
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], DyldChainedFixupsHeader> {
+        let (bytes, fixups_version) = le_u32(bytes)?;
+        let (bytes, starts_offset) = le_u32(bytes)?;
+        let (bytes, imports_offset) = le_u32(bytes)?;
+        let (bytes, symbols_offset) = le_u32(bytes)?;
+        let (bytes, imports_count) = le_u32(bytes)?;
+        let (bytes, imports_format) = DyldImportFormat::parse(bytes)?;
+        let (bytes, symbols_format) = DyldSymbolsFormat::parse(bytes)?;
+
+        Ok((
+            bytes,
+            DyldChainedFixupsHeader {
+                fixups_version,
+                starts_offset,
+                imports_offset,
+                symbols_offset,
+                imports_count,
+                imports_format,
+                symbols_format,
+            },
+        ))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DyldFixup {
     pub offset: u64,
@@ -792,5 +1046,77 @@ impl DyldFixup {
         }
 
         fixups
+    }
+}
+
+#[derive(Debug)]
+pub struct DyldChainedFixupCommand<A> {
+    pub cmd: LinkeditDataCommand,
+    pub header: Option<DyldChainedFixupsHeader>,
+    pub imports: Option<Vec<DyldChainedImport>>,
+    pub starts: Option<DyldStartsInImage>,
+    pub fixups: Option<Vec<DyldFixup>>,
+
+    phantom: PhantomData<A>,
+}
+
+impl<'a> ParseRaw<'a> for DyldChainedFixupCommand<Raw> {
+    fn parse(base: LoadCommandBase, ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let (_, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
+        Ok((
+            ldcmd,
+            DyldChainedFixupCommand {
+                cmd,
+                header: None,
+                imports: None,
+                starts: None,
+                fixups: None,
+                phantom: PhantomData,
+            },
+        ))
+    }
+}
+
+impl<'a, T: Read + Seek> ParseResolved<'a, T> for DyldChainedFixupCommand<Resolved> {
+    fn parse(
+        buf: &mut T,
+        base: LoadCommandBase,
+        ldcmd: &'a [u8],
+        _: &Vec<LoadCommand<Resolved>>,
+    ) -> IResult<&'a [u8], Self> {
+        let (_, cmd) = LinkeditDataCommand::parse(base, ldcmd)?;
+        let mut blob = vec![0; cmd.datasize as usize];
+        buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
+        buf.read_exact(&mut blob).unwrap();
+
+        let (_, header) = DyldChainedFixupsHeader::parse(&blob).unwrap();
+        let mut imports = vec![];
+        for i in 0..header.imports_count {
+            let (_, import) = DyldChainedImport::parse(
+                &blob[header.imports_offset as usize + i as usize * 4..],
+                &blob[header.symbols_offset as usize..],
+            )
+            .unwrap();
+            imports.push(import);
+        }
+
+        let (_, starts) = DyldStartsInImage::parse(&blob[header.starts_offset as usize..]).unwrap();
+
+        let mut fixups = vec![];
+        for start in &starts.seg_starts {
+            fixups.extend(DyldFixup::parse(buf, start, &imports));
+        }
+
+        Ok((
+            ldcmd,
+            DyldChainedFixupCommand {
+                cmd,
+                header: Some(header),
+                imports: Some(imports),
+                starts: Some(starts),
+                fixups: Some(fixups),
+                phantom: PhantomData,
+            },
+        ))
     }
 }
