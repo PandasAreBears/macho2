@@ -5,7 +5,7 @@ use std::{
 };
 
 use macho2::{
-    load_command::Resolved,
+    command::Resolved,
     macho::{FatMachO, MachO, MachOErr, MachOResult},
     objc::ObjCInfo,
 };

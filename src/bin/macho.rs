@@ -1,8 +1,7 @@
 use macho2::{
+    command::{segment::Protection, LoadCommand, Resolved},
     header::MachHeader,
-    load_command::{LoadCommand, Resolved},
     macho::{FatMachO, MachO, MachOErr, MachOResult},
-    segment::Protection,
 };
 use std::{
     env,

@@ -5,8 +5,8 @@ use std::{
 };
 
 use macho2::{
+    command::{LoadCommand, Resolved},
     header::MHMagic,
-    load_command::{LoadCommand, Resolved},
     macho::{FatMachO, MachO, MachOErr, MachOResult},
 };
 

@@ -1,5 +1,5 @@
 use macho2::{
-    load_command::Raw,
+    command::Raw,
     macho::{FatMachO, MachO, MachOErr, MachOResult},
 };
 use std::{
