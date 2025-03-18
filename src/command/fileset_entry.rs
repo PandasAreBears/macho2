@@ -52,6 +52,7 @@ impl Serialize for FilesetEntryCommand {
         buf.extend(self.reserved.to_le_bytes());
         buf.extend(self.entry_id.as_bytes());
         buf.push(0);
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -65,7 +66,7 @@ mod tests {
     fn test_fileset_entry_serialise() {
         let cmd = FilesetEntryCommand {
             cmd: LCLoadCommand::LcFilesetEntry,
-            cmdsize: 40,
+            cmdsize: 47,
             vmaddr: 1,
             fileoff: 2,
             entry_id: "com.apple.dyld".to_string(),

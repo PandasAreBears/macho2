@@ -84,6 +84,7 @@ impl Serialize for EncryptionInfoCommand64 {
         buf.extend(self.cryptsize.to_le_bytes());
         buf.extend(self.cryptid.to_le_bytes());
         buf.extend(self.pad.to_le_bytes());
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }

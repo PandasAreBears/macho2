@@ -247,6 +247,7 @@ impl<T> Serialize for SymtabCommand<T> {
         buf.extend(self.nsyms.to_le_bytes());
         buf.extend(self.stroff.to_le_bytes());
         buf.extend(self.strsize.to_le_bytes());
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }

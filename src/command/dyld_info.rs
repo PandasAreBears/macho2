@@ -509,6 +509,7 @@ impl<T> Serialize for DyldInfoCommand<T> {
         buf.extend(self.lazy_bind_size.to_le_bytes());
         buf.extend(self.export_off.to_le_bytes());
         buf.extend(self.export_size.to_le_bytes());
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }

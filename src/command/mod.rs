@@ -80,6 +80,15 @@ pub struct Resolved;
 
 pub trait Serialize {
     fn serialize(&self) -> Vec<u8>;
+
+    fn pad_to_size(&self, buf: &mut Vec<u8>, size: usize) {
+        let pad_size = size.checked_sub(buf.len()).expect(&format!(
+            "Serialized buf size exceeds cmdsize. Expected: {}, Actual: {}",
+            size,
+            buf.len()
+        ));
+        buf.extend(vec![0u8; pad_size]);
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -255,6 +264,7 @@ where
         let (_, base) = LoadCommandBase::parse(remaining_ldcmds).map_err(|_| MachOErr {
             detail: format!("Unable to parse load command base for index {}", i),
         })?;
+        println!("{:?}", base);
 
         let cmdsize = base.cmdsize as usize;
         if cmdsize > remaining_ldcmds.len() {

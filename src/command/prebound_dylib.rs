@@ -68,6 +68,7 @@ impl Serialize for PreboundDylibCommand {
                 })
                 .collect::<Vec<u8>>(),
         );
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }

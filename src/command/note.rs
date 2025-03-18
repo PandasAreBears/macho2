@@ -49,6 +49,7 @@ impl Serialize for NoteCommand {
         buf.extend(self.size.to_le_bytes());
         buf.extend(self.data_owner.as_bytes());
         buf.push(0);
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -62,7 +63,7 @@ mod tests {
     fn test_note_serialise() {
         let cmd = NoteCommand {
             cmd: LCLoadCommand::LcNote,
-            cmdsize: 32,
+            cmdsize: 47,
             data_owner: "com.apple.dt.Xcode".to_string(),
             offset: 0,
             size: 0,

@@ -37,6 +37,7 @@ impl Serialize for RpathCommand {
         buf.extend((0xC as u32).to_le_bytes()); // path offset
         buf.extend(self.path.as_bytes());
         buf.push(0);
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -50,7 +51,7 @@ mod tests {
     fn test_rpath_serialise() {
         let cmd = RpathCommand {
             cmd: LCLoadCommand::LcRpath,
-            cmdsize: 16,
+            cmdsize: 21,
             path: "/usr/lib".to_string(),
         };
 

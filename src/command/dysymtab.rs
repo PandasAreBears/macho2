@@ -263,6 +263,7 @@ impl<T> Serialize for DysymtabCommand<T> {
         buf.extend(self.nextrel.to_le_bytes());
         buf.extend(self.locreloff.to_le_bytes());
         buf.extend(self.nlocrel.to_le_bytes());
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }

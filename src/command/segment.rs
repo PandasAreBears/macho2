@@ -416,6 +416,7 @@ impl Serialize for SegmentCommand64 {
         for sect in &self.sections {
             bytes.extend(sect.serialize());
         }
+        self.pad_to_size(&mut bytes, self.cmdsize as usize);
         bytes
     }
 }

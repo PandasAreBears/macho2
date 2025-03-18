@@ -48,6 +48,7 @@ impl Serialize for DylibCommand {
         buf.extend(reverse_version_string(self.compatibility_version.clone()).to_le_bytes());
         buf.extend(self.name.as_bytes());
         buf.push(0);
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -61,7 +62,7 @@ mod tests {
     fn test_dylib() {
         let cmd = DylibCommand {
             cmd: LCLoadCommand::LcLoadDylib,
-            cmdsize: 32,
+            cmdsize: 42,
             name: "libSystem.B.dylib".to_string(),
             timestamp: 0,
             current_version: "0.0.0".to_string(),

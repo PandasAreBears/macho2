@@ -53,6 +53,7 @@ impl Serialize for SourceVersionCommand {
             | e as u64;
 
         buf.extend(version.to_le_bytes());
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }

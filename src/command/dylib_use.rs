@@ -65,6 +65,7 @@ impl Serialize for DylibUseCommand {
         buf.extend(self.current_version.to_le_bytes());
         buf.extend(self.compat_version.to_le_bytes());
         buf.extend(self.flags.bits().to_le_bytes());
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }

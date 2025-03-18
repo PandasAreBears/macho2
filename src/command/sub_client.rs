@@ -37,6 +37,7 @@ impl Serialize for SubClientCommand {
         buf.extend((0xC as u32).to_le_bytes()); // client offset
         buf.extend(self.client.as_bytes());
         buf.push(0);
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -50,7 +51,7 @@ mod tests {
     fn test_sub_client_serialise() {
         let cmd = SubClientCommand {
             cmd: LCLoadCommand::LcSubClient,
-            cmdsize: 16,
+            cmdsize: 32,
             client: "com.apple.securityd".to_string(),
         };
 

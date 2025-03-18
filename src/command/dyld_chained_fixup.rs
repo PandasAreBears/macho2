@@ -1117,6 +1117,7 @@ impl<T> Serialize for DyldChainedFixupCommand<T> {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
+        self.pad_to_size(&mut buf, self.cmd.cmdsize as usize);
         buf
     }
 }
@@ -1132,7 +1133,7 @@ mod tests {
         let cmd = DyldChainedFixupCommand {
             cmd: LinkeditDataCommand {
                 cmd: LCLoadCommand::LcDyldChainedFixups,
-                cmdsize: 0,
+                cmdsize: 16,
                 dataoff: 0,
                 datasize: 0,
             },

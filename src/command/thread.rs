@@ -54,6 +54,7 @@ impl Serialize for ThreadCommand {
             }
             buf.extend(thread.serialize());
         }
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -70,7 +71,7 @@ mod tests {
     fn test_thread_serialise() {
         let cmd = ThreadCommand {
             cmd: LCLoadCommand::LcThread,
-            cmdsize: 48,
+            cmdsize: 288,
             threads: vec![ThreadState::Arm64State(
                 Arm64ThreadState::Arm64ThreadState64(Arm64ThreadState64 {
                     x: [1u64; 29],

@@ -556,6 +556,7 @@ impl<T> Serialize for CodeSignCommand<T> {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
+        self.pad_to_size(&mut buf, self.cmd.cmdsize as usize);
         buf
     }
 }

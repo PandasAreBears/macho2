@@ -37,6 +37,7 @@ impl Serialize for DylinkerCommand {
         buf.extend((0xC as u32).to_le_bytes()); // name offset
         buf.extend(self.name.as_bytes());
         buf.push(0);
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -50,7 +51,7 @@ mod tests {
     fn test_dylinker_serialise() {
         let cmd = DylinkerCommand {
             cmd: LCLoadCommand::LcLoadDylinker,
-            cmdsize: 16,
+            cmdsize: 26,
             name: "/usr/lib/dyld".to_string(),
         };
 

@@ -37,6 +37,7 @@ impl Serialize for SubFrameworkCommand {
         buf.extend((0xC as u32).to_le_bytes()); // umbrella offset
         buf.extend(self.umbrella.as_bytes());
         buf.push(0);
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -50,7 +51,7 @@ mod tests {
     fn test_sub_framework_serialise() {
         let cmd = SubFrameworkCommand {
             cmd: LCLoadCommand::LcSubFramework,
-            cmdsize: 16,
+            cmdsize: 21,
             umbrella: "Security".to_string(),
         };
 

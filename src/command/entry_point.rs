@@ -35,6 +35,7 @@ impl Serialize for EntryPointCommand {
         buf.extend(self.cmdsize.to_le_bytes());
         buf.extend(self.entryoff.to_le_bytes());
         buf.extend(self.stacksize.to_le_bytes());
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }

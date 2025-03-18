@@ -38,6 +38,7 @@ impl Serialize for SubLibraryCommand {
         buf.extend((0xC as u32).to_le_bytes()); // sub_library offset
         buf.extend(self.sub_library.as_bytes());
         buf.push(0);
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -51,7 +52,7 @@ mod tests {
     fn test_sub_library_serialise() {
         let cmd = SubLibraryCommand {
             cmd: LCLoadCommand::LcSubLibrary,
-            cmdsize: 16,
+            cmdsize: 30,
             sub_library: "libSystem.B.dylib".to_string(),
         };
 

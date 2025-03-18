@@ -35,6 +35,7 @@ impl Serialize for SymsegCommand {
         buf.extend(self.cmdsize.to_le_bytes());
         buf.extend(self.offset.to_le_bytes());
         buf.extend(self.size.to_le_bytes());
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }

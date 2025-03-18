@@ -37,6 +37,7 @@ impl Serialize for VersionMinCommand {
         buf.extend(self.cmdsize.to_le_bytes());
         buf.extend(reverse_version_string(self.version.clone()).to_le_bytes());
         buf.extend(reverse_version_string(self.sdk.clone()).to_le_bytes());
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }

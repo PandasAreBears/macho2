@@ -59,6 +59,7 @@ impl Serialize for RoutinesCommand64 {
         buf.extend(self.reserved4.to_le_bytes());
         buf.extend(self.reserved5.to_le_bytes());
         buf.extend(self.reserved6.to_le_bytes());
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }

@@ -38,6 +38,7 @@ impl Serialize for SubUmbrellaCommand {
         buf.extend((0xC as u32).to_le_bytes()); // sub_umbrella offset
         buf.extend(self.sub_umbrella.as_bytes());
         buf.push(0);
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -51,7 +52,7 @@ mod tests {
     fn test_sub_umbrella_serialise() {
         let cmd = SubUmbrellaCommand {
             cmd: LCLoadCommand::LcSubUmbrella,
-            cmdsize: 16,
+            cmdsize: 21,
             sub_umbrella: "Security".to_string(),
         };
 

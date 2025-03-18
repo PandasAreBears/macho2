@@ -48,6 +48,7 @@ impl Serialize for LinkerOptionCommand {
             buf.extend(string.as_bytes());
             buf.push(0);
         }
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -61,7 +62,7 @@ mod tests {
     fn test_linker_option_serialise() {
         let cmd = LinkerOptionCommand {
             cmd: LCLoadCommand::LcLinkerOption,
-            cmdsize: 16,
+            cmdsize: 32,
             count: 2,
             strings: vec!["-dead_strip".to_string(), "-no_pie".to_string()],
         };

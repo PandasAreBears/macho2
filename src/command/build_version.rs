@@ -128,6 +128,7 @@ impl Serialize for BuildVersionCommand {
         for tool in &self.tools {
             buf.extend(tool.serialize());
         }
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }

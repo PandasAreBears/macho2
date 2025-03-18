@@ -87,6 +87,7 @@ impl<T> Serialize for FunctionStartsCommand<T> {
         buf.extend(self.cmdsize.to_le_bytes());
         buf.extend(self.dataoff.to_le_bytes());
         buf.extend(self.datasize.to_le_bytes());
+        self.pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
