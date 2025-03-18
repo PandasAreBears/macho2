@@ -9,6 +9,8 @@ use nom::{
 use num_derive::FromPrimitive;
 use strum_macros::Display;
 
+use crate::command::Serialize;
+
 #[repr(usize)]
 #[derive(Debug, Copy, Clone, FromPrimitive)]
 pub enum CpuABI {
@@ -117,6 +119,18 @@ impl CpuSubType {
     }
 }
 
+impl Serialize for CpuSubType {
+    fn serialize(&self) -> Vec<u8> {
+        match self {
+            CpuSubType::CpuSubTypeI386(cpusubtype) => cpusubtype.serialize(),
+            CpuSubType::CpuSubTypeX86(cpusubtype) => cpusubtype.serialize(),
+            CpuSubType::CpuSubTypeArm(cpusubtype) => cpusubtype.serialize(),
+            CpuSubType::CpuSubTypeArm64(cpusubtype) => cpusubtype.serialize(),
+            _ => Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
 pub enum CpuSubTypeI386 {
     All = 3,
@@ -158,6 +172,13 @@ impl CpuSubTypeI386 {
     }
 }
 
+impl Serialize for CpuSubTypeI386 {
+    fn serialize(&self) -> Vec<u8> {
+        let cpusubtype = *self as u32;
+        cpusubtype.to_le_bytes().to_vec()
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
 pub enum CpuSubTypeX86 {
     All = 3,
@@ -180,6 +201,13 @@ impl CpuSubTypeX86 {
             Some(cpusubtype) => Ok((bytes, cpusubtype)),
             None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
+    }
+}
+
+impl Serialize for CpuSubTypeX86 {
+    fn serialize(&self) -> Vec<u8> {
+        let cpusubtype = *self as u32;
+        cpusubtype.to_le_bytes().to_vec()
     }
 }
 
@@ -219,6 +247,13 @@ impl CpuSubTypeArm {
     }
 }
 
+impl Serialize for CpuSubTypeArm {
+    fn serialize(&self) -> Vec<u8> {
+        let cpusubtype = *self as u32;
+        cpusubtype.to_le_bytes().to_vec()
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
 pub enum CpuSubTypeArm64 {
     All = 0,
@@ -243,6 +278,13 @@ impl CpuSubTypeArm64 {
             Some(cpusubtype) => Ok((bytes, cpusubtype)),
             None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
+    }
+}
+
+impl Serialize for CpuSubTypeArm64 {
+    fn serialize(&self) -> Vec<u8> {
+        let cpusubtype = *self as u32;
+        cpusubtype.to_le_bytes().to_vec()
     }
 }
 

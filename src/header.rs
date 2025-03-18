@@ -4,6 +4,7 @@ use nom::{number::complete::le_u32, sequence::tuple, IResult};
 use nom_derive::{Nom, Parse};
 
 use crate::{
+    command::Serialize,
     machine::{CpuSubType, CpuType},
     macho::{MachOErr, MachOResult},
 };
@@ -80,7 +81,7 @@ pub enum MHFileType {
     MhMetalLib = 0x262,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MachHeader32 {
     pub magic: MHMagic,
     pub cputype: CpuType,
@@ -119,7 +120,21 @@ impl MachHeader32 {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+impl Serialize for MachHeader32 {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend((self.magic as u32).to_le_bytes());
+        buf.extend((self.cputype as u32).to_le_bytes());
+        buf.extend(self.cpusubtype.serialize());
+        buf.extend((self.filetype as u32).to_le_bytes());
+        buf.extend(self.ncmds.to_le_bytes());
+        buf.extend(self.sizeofcmds.to_le_bytes());
+        buf.extend(self.flags.bits().to_le_bytes());
+        buf
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MachHeader64 {
     pub magic: MHMagic,
     pub cputype: CpuType,
@@ -156,6 +171,21 @@ impl MachHeader64 {
                 reserved,
             },
         ))
+    }
+}
+
+impl Serialize for MachHeader64 {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend((self.magic as u32).to_le_bytes());
+        buf.extend((self.cputype as u32).to_le_bytes());
+        buf.extend(self.cpusubtype.serialize());
+        buf.extend((self.filetype as u32).to_le_bytes());
+        buf.extend(self.ncmds.to_le_bytes());
+        buf.extend(self.sizeofcmds.to_le_bytes());
+        buf.extend(self.flags.bits().to_le_bytes());
+        buf.extend(self.reserved.to_le_bytes());
+        buf
     }
 }
 
@@ -262,5 +292,58 @@ impl MachHeader {
             MachHeader::Header32(_) => MachHeader32::SIZE,
             MachHeader::Header64(_) => MachHeader64::SIZE,
         }
+    }
+}
+
+impl Serialize for MachHeader {
+    fn serialize(&self) -> Vec<u8> {
+        match self {
+            MachHeader::Header32(h) => h.serialize(),
+            MachHeader::Header64(h) => h.serialize(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::machine::{CpuSubTypeArm64, CpuSubTypeX86};
+
+    use super::*;
+
+    #[test]
+    fn test_mach_header32() {
+        let header = MachHeader32 {
+            magic: MHMagic::MhMagic,
+            cputype: CpuType::X86_64,
+            cpusubtype: CpuSubType::CpuSubTypeX86(CpuSubTypeX86::All),
+            filetype: MHFileType::MhObject,
+            ncmds: 1,
+            sizeofcmds: 1,
+            flags: MHFlags::MH_NOUNDEFS,
+        };
+
+        let serialized = header.serialize();
+        let deserialized = MachHeader32::parse(&serialized).unwrap().1;
+
+        assert_eq!(header, deserialized);
+    }
+
+    #[test]
+    fn test_mach_header64() {
+        let header = MachHeader64 {
+            magic: MHMagic::MhMagic64,
+            cputype: CpuType::Arm64,
+            cpusubtype: CpuSubType::CpuSubTypeArm64(CpuSubTypeArm64::V8),
+            filetype: MHFileType::MhObject,
+            ncmds: 1,
+            sizeofcmds: 1,
+            flags: MHFlags::MH_NOUNDEFS,
+            reserved: 0,
+        };
+
+        let serialized = header.serialize();
+        let deserialized = MachHeader64::parse(&serialized).unwrap().1;
+
+        assert_eq!(header, deserialized);
     }
 }

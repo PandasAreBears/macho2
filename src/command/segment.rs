@@ -9,7 +9,7 @@ use nom::{
 };
 use num_derive::FromPrimitive;
 
-use crate::{header::MachHeader, helpers::string_upto_null_terminator};
+use crate::helpers::string_upto_null_terminator;
 
 use super::{LCLoadCommand, LoadCommandBase, Serialize};
 
@@ -174,6 +174,27 @@ impl Section32 {
     }
 }
 
+impl Serialize for Section32 {
+    fn serialize(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend(self.sectname.as_bytes());
+        bytes.extend(vec![0; 16 - self.sectname.len()]);
+        bytes.extend(self.segname.as_bytes());
+        bytes.extend(vec![0; 16 - self.segname.len()]);
+        bytes.extend(self.addr.to_le_bytes());
+        bytes.extend(self.size.to_le_bytes());
+        bytes.extend(self.offset.to_le_bytes());
+        bytes.extend(self.align.to_le_bytes());
+        bytes.extend(self.reloff.to_le_bytes());
+        bytes.extend(self.nreloc.to_le_bytes());
+        let attrs_and_flags = self.flags_secattrs.bits() | self.flags_sectype as u32;
+        bytes.extend(attrs_and_flags.to_le_bytes());
+        bytes.extend(self.reserved1.to_le_bytes());
+        bytes.extend(self.reserved2.to_le_bytes());
+        bytes
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Section64 {
     pub sectname: String,
@@ -229,6 +250,28 @@ impl Section64 {
     }
 }
 
+impl Serialize for Section64 {
+    fn serialize(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend(self.sectname.as_bytes());
+        bytes.extend(vec![0; 16 - self.sectname.len()]);
+        bytes.extend(self.segname.as_bytes());
+        bytes.extend(vec![0; 16 - self.segname.len()]);
+        bytes.extend(self.addr.to_le_bytes());
+        bytes.extend(self.size.to_le_bytes());
+        bytes.extend(self.offset.to_le_bytes());
+        bytes.extend(self.align.to_le_bytes());
+        bytes.extend(self.reloff.to_le_bytes());
+        bytes.extend(self.nreloc.to_le_bytes());
+        let attrs_and_flags = self.flags_secattrs.bits() | self.flags_sectype as u32;
+        bytes.extend(attrs_and_flags.to_le_bytes());
+        bytes.extend(self.reserved1.to_le_bytes());
+        bytes.extend(self.reserved2.to_le_bytes());
+        bytes.extend(self.reserved3.to_le_bytes());
+        bytes
+    }
+}
+
 #[derive(Debug)]
 pub struct SegmentCommand32 {
     pub cmd: LCLoadCommand,
@@ -281,10 +324,32 @@ impl<'a> SegmentCommand32 {
     }
 }
 
+impl Serialize for SegmentCommand32 {
+    fn serialize(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend(self.cmd.serialize());
+        bytes.extend(self.cmdsize.to_le_bytes());
+        bytes.extend(self.segname.as_bytes());
+        bytes.extend(vec![0; 16 - self.segname.len()]);
+        bytes.extend(self.vmaddr.to_le_bytes());
+        bytes.extend(self.vmsize.to_le_bytes());
+        bytes.extend(self.fileoff.to_le_bytes());
+        bytes.extend(self.filesize.to_le_bytes());
+        bytes.extend(self.maxprot.bits().to_le_bytes());
+        bytes.extend(self.initprot.bits().to_le_bytes());
+        bytes.extend(self.nsects.to_le_bytes());
+        bytes.extend(self.flags.bits().to_le_bytes());
+        for sect in &self.sects {
+            bytes.extend(sect.serialize());
+        }
+        bytes
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SegmentCommand64 {
-    pub cmd: LCLoadCommand,
     pub cmdsize: u32,
+    pub cmd: LCLoadCommand,
     pub segname: String,
     pub vmaddr: u64,
     pub vmsize: u64,
@@ -330,5 +395,50 @@ impl<'a> SegmentCommand64 {
                 sections,
             },
         ))
+    }
+}
+
+impl Serialize for SegmentCommand64 {
+    fn serialize(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend(self.cmd.serialize());
+        bytes.extend(self.cmdsize.to_le_bytes());
+        bytes.extend(self.segname.as_bytes());
+        bytes.extend(vec![0; 16 - self.segname.len()]);
+        bytes.extend(self.vmaddr.to_le_bytes());
+        bytes.extend(self.vmsize.to_le_bytes());
+        bytes.extend(self.fileoff.to_le_bytes());
+        bytes.extend(self.filesize.to_le_bytes());
+        bytes.extend(self.maxprot.bits().to_le_bytes());
+        bytes.extend(self.initprot.bits().to_le_bytes());
+        bytes.extend(self.nsects.to_le_bytes());
+        bytes.extend(self.flags.bits().to_le_bytes());
+        for sect in &self.sections {
+            bytes.extend(sect.serialize());
+        }
+        bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::command::{LCLoadCommand, Serialize};
+
+    use super::SegmentCommand64;
+
+    #[test]
+    fn test_parse_segment64() {
+        // __TEXT section from /usr/lib/libffi.dylib
+        let data = include_bytes!("test/seg64.bin");
+        let (remaining, seg) = SegmentCommand64::parse(data).unwrap();
+        assert!(remaining.len() == 0);
+
+        assert_eq!(seg.cmd, LCLoadCommand::LcSegment64);
+        assert_eq!(seg.sections.len(), 6);
+        assert_eq!(seg.segname, "__TEXT");
+
+        let serialized = seg.serialize();
+        assert_eq!(serialized.len(), data.len());
+        assert_eq!(serialized, data);
     }
 }
