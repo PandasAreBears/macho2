@@ -72,9 +72,9 @@ pub use uuid::UuidCommand;
 pub use version_min::VersionMinCommand;
 
 /// ZSTs to define the load command parsing behaviour.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Raw;
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 
 pub struct Resolved;
 
@@ -741,6 +741,64 @@ impl LoadCommand<Raw> {
                 Ok((bytes, LoadCommand::FilesetEntry(cmd)))
             }
             LCLoadCommand::None => Ok((ldcmd, LoadCommand::None)),
+        }
+    }
+}
+
+impl<T> Serialize for LoadCommand<T> {
+    fn serialize(&self) -> Vec<u8> {
+        match self {
+            LoadCommand::None => vec![],
+            LoadCommand::Segment32(cmd) => cmd.serialize(),
+            LoadCommand::Symtab(cmd) => cmd.serialize(),
+            LoadCommand::Symseg(cmd) => cmd.serialize(),
+            LoadCommand::Thread(cmd) => cmd.serialize(),
+            LoadCommand::UnixThread(cmd) => cmd.serialize(),
+            LoadCommand::Dysymtab(cmd) => cmd.serialize(),
+            LoadCommand::LoadDylib(cmd) => cmd.serialize(),
+            LoadCommand::DylibId(cmd) => cmd.serialize(),
+            LoadCommand::LoadDylinker(cmd) => cmd.serialize(),
+            LoadCommand::IdDylinker(cmd) => cmd.serialize(),
+            LoadCommand::PreboundDylib(cmd) => cmd.serialize(),
+            LoadCommand::Routines(cmd) => cmd.serialize(),
+            LoadCommand::SubFramework(cmd) => cmd.serialize(),
+            LoadCommand::SubUmbrella(cmd) => cmd.serialize(),
+            LoadCommand::SubClient(cmd) => cmd.serialize(),
+            LoadCommand::SubLibrary(cmd) => cmd.serialize(),
+            LoadCommand::TwoLevelHints(cmd) => cmd.serialize(),
+            LoadCommand::PrebindCksum(cmd) => cmd.serialize(),
+            LoadCommand::LoadWeakDylib(cmd) => cmd.serialize(),
+            LoadCommand::Segment64(cmd) => cmd.serialize(),
+            LoadCommand::Routines64(cmd) => cmd.serialize(),
+            LoadCommand::UUID(cmd) => cmd.serialize(),
+            LoadCommand::Rpath(cmd) => cmd.serialize(),
+            LoadCommand::CodeSignature(cmd) => cmd.serialize(),
+            LoadCommand::SegmentSplitInfo(cmd) => cmd.serialize(),
+            LoadCommand::ReexportDylib(cmd) => cmd.serialize(),
+            LoadCommand::LazyLoadDylib(cmd) => cmd.serialize(),
+            LoadCommand::EncryptionInfo(cmd) => cmd.serialize(),
+            LoadCommand::DyldInfo(cmd) => cmd.serialize(),
+            LoadCommand::DyldInfoOnly(cmd) => cmd.serialize(),
+            LoadCommand::LoadUpwardDylib(cmd) => cmd.serialize(),
+            LoadCommand::VersionMinMacosx(cmd) => cmd.serialize(),
+            LoadCommand::VersionMinIphoneos(cmd) => cmd.serialize(),
+            LoadCommand::FunctionStarts(cmd) => cmd.serialize(),
+            LoadCommand::DyldEnvironment(cmd) => cmd.serialize(),
+            LoadCommand::Main(cmd) => cmd.serialize(),
+            LoadCommand::DataInCode(cmd) => cmd.serialize(),
+            LoadCommand::SourceVersion(cmd) => cmd.serialize(),
+            LoadCommand::DylibCodeSignDrs(cmd) => cmd.serialize(),
+            LoadCommand::EncryptionInfo64(cmd) => cmd.serialize(),
+            LoadCommand::LinkerOption(cmd) => cmd.serialize(),
+            LoadCommand::LinkerOptimizationHint(cmd) => cmd.serialize(),
+            LoadCommand::VersionMinTvos(cmd) => cmd.serialize(),
+            LoadCommand::VersionMinWatchos(cmd) => cmd.serialize(),
+            LoadCommand::Note(cmd) => cmd.serialize(),
+            LoadCommand::BuildVersion(cmd) => cmd.serialize(),
+            LoadCommand::DyldExportsTrie(cmd) => cmd.serialize(),
+            LoadCommand::DyldChainedFixups(cmd) => cmd.serialize(),
+            LoadCommand::FilesetEntry(cmd) => cmd.serialize(),
+            LoadCommand::AtomInfo(cmd) => cmd.serialize(),
         }
     }
 }

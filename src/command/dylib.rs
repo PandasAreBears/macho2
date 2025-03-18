@@ -1,10 +1,10 @@
 use nom::{number::complete::le_u32, sequence, IResult};
 
-use crate::helpers::{string_upto_null_terminator, version_string};
+use crate::helpers::{reverse_version_string, string_upto_null_terminator, version_string};
 
-use super::{LCLoadCommand, LoadCommandBase};
+use super::{LCLoadCommand, LoadCommandBase, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DylibCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -34,5 +34,42 @@ impl<'a> DylibCommand {
                 compatibility_version: version_string(compatibility_version),
             },
         ))
+    }
+}
+
+impl Serialize for DylibCommand {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+        buf.extend((0x18 as u32).to_le_bytes()); // name offset
+        buf.extend(self.timestamp.to_le_bytes());
+        buf.extend(reverse_version_string(self.current_version.clone()).to_le_bytes());
+        buf.extend(reverse_version_string(self.compatibility_version.clone()).to_le_bytes());
+        buf.extend(self.name.as_bytes());
+        buf.push(0);
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command::LCLoadCommand;
+
+    #[test]
+    fn test_dylib() {
+        let cmd = DylibCommand {
+            cmd: LCLoadCommand::LcLoadDylib,
+            cmdsize: 32,
+            name: "libSystem.B.dylib".to_string(),
+            timestamp: 0,
+            current_version: "0.0.0".to_string(),
+            compatibility_version: "0.0.0".to_string(),
+        };
+
+        let serialized = cmd.serialize();
+        let deserialized = DylibCommand::parse(&serialized).unwrap().1;
+        assert_eq!(cmd, deserialized);
     }
 }

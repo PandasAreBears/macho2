@@ -14,9 +14,11 @@ use num_derive::FromPrimitive;
 
 use crate::helpers::{read_sleb, read_uleb, string_upto_null_terminator};
 
-use super::{dyld_exports_trie::DyldExport, LCLoadCommand, LoadCommandBase, Raw, Resolved};
+use super::{
+    dyld_exports_trie::DyldExport, LCLoadCommand, LoadCommandBase, Raw, Resolved, Serialize,
+};
 
-#[derive(Debug, FromPrimitive, Clone, Copy)]
+#[derive(Debug, FromPrimitive, Clone, Copy, PartialEq, Eq)]
 pub enum RebaseType {
     Pointer = 1,
     TextAbsolute32 = 2,
@@ -49,7 +51,7 @@ impl RebaseOpcode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct RebaseInstruction {
     pub segment_index: u8,
     pub segment_offset: u64,
@@ -141,7 +143,7 @@ impl RebaseInstruction {
     }
 }
 
-#[derive(Debug, FromPrimitive, Clone, Copy)]
+#[derive(Debug, FromPrimitive, Clone, Copy, PartialEq, Eq)]
 pub enum BindType {
     Pointer = 1,
     TextAbsolute32 = 2,
@@ -200,7 +202,7 @@ pub enum BindSubOpcode {
     ThreadedApply = 1,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct BindInstruction {
     pub segment_index: u8,
     pub segment_offset: u64,
@@ -349,7 +351,7 @@ impl BindInstruction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DyldInfoCommand<A> {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -489,5 +491,57 @@ impl<'a> DyldInfoCommand<Resolved> {
                 phantom: PhantomData,
             },
         ))
+    }
+}
+
+impl<T> Serialize for DyldInfoCommand<T> {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+        buf.extend(self.rebase_off.to_le_bytes());
+        buf.extend(self.rebase_size.to_le_bytes());
+        buf.extend(self.bind_off.to_le_bytes());
+        buf.extend(self.bind_size.to_le_bytes());
+        buf.extend(self.weak_bind_off.to_le_bytes());
+        buf.extend(self.weak_bind_size.to_le_bytes());
+        buf.extend(self.lazy_bind_off.to_le_bytes());
+        buf.extend(self.lazy_bind_size.to_le_bytes());
+        buf.extend(self.export_off.to_le_bytes());
+        buf.extend(self.export_size.to_le_bytes());
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_dyld_info_command() {
+        let dyld = DyldInfoCommand {
+            cmd: LCLoadCommand::LcDyldInfo,
+            cmdsize: 0x00000038,
+            rebase_off: 0x00000001,
+            rebase_size: 0x00000002,
+            bind_off: 0x00000003,
+            bind_size: 0x00000004,
+            weak_bind_off: 0x00000005,
+            weak_bind_size: 0x00000006,
+            lazy_bind_off: 0x00000007,
+            lazy_bind_size: 0x00000008,
+            export_off: 0x00000009,
+            export_size: 0x0000000a,
+            rebase_instructions: None,
+            bind_instructions: None,
+            weak_instructions: None,
+            lazy_instructions: None,
+            exports: None,
+            phantom: PhantomData,
+        };
+
+        let ser = dyld.serialize();
+        let (_, parsed) = DyldInfoCommand::<Raw>::parse(&ser).unwrap();
+        assert_eq!(parsed, dyld);
     }
 }

@@ -1,8 +1,8 @@
 use nom::{number::complete::le_u32, IResult};
 
-use super::{LCLoadCommand, LoadCommandBase};
+use super::{LCLoadCommand, LoadCommandBase, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct EncryptionInfoCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -31,7 +31,19 @@ impl<'a> EncryptionInfoCommand {
     }
 }
 
-#[derive(Debug)]
+impl Serialize for EncryptionInfoCommand {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+        buf.extend(self.cryptoff.to_le_bytes());
+        buf.extend(self.cryptsize.to_le_bytes());
+        buf.extend(self.cryptid.to_le_bytes());
+        buf
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct EncryptionInfoCommand64 {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -60,5 +72,55 @@ impl<'a> EncryptionInfoCommand64 {
                 pad,
             },
         ))
+    }
+}
+
+impl Serialize for EncryptionInfoCommand64 {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+        buf.extend(self.cryptoff.to_le_bytes());
+        buf.extend(self.cryptsize.to_le_bytes());
+        buf.extend(self.cryptid.to_le_bytes());
+        buf.extend(self.pad.to_le_bytes());
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command::LCLoadCommand;
+
+    #[test]
+    fn test_encryption_info() {
+        let cmd = EncryptionInfoCommand {
+            cmd: LCLoadCommand::LcEncryptionInfo,
+            cmdsize: 20,
+            cryptoff: 1,
+            cryptsize: 2,
+            cryptid: 3,
+        };
+
+        let serialized = cmd.serialize();
+        let deserialized = EncryptionInfoCommand::parse(&serialized).unwrap().1;
+        assert_eq!(cmd, deserialized);
+    }
+
+    #[test]
+    fn test_encryption_info64() {
+        let cmd = EncryptionInfoCommand64 {
+            cmd: LCLoadCommand::LcEncryptionInfo64,
+            cmdsize: 24,
+            cryptoff: 1,
+            cryptsize: 2,
+            cryptid: 3,
+            pad: 4,
+        };
+
+        let serialized = cmd.serialize();
+        let deserialized = EncryptionInfoCommand64::parse(&serialized).unwrap().1;
+        assert_eq!(cmd, deserialized);
     }
 }

@@ -310,6 +310,15 @@ impl ThreadStateFlavor {
     }
 }
 
+impl Serialize for ThreadStateFlavor {
+    fn serialize(&self) -> Vec<u8> {
+        match self {
+            ThreadStateFlavor::X86Flavor(flavor) => flavor.serialize(),
+            ThreadStateFlavor::Arm64Flavor(flavor) => flavor.serialize(),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ThreadState {
     X86State(X86ThreadState),
@@ -331,6 +340,15 @@ impl ThreadState {
     }
 }
 
+impl Serialize for ThreadState {
+    fn serialize(&self) -> Vec<u8> {
+        match self {
+            ThreadState::X86State(state) => state.serialize(),
+            ThreadState::Arm64State(state) => state.serialize(),
+        }
+    }
+}
+
 pub struct ThreadStateBase {
     pub flavor: ThreadStateFlavor,
     pub count: u32,
@@ -342,6 +360,15 @@ impl ThreadStateBase {
         let (bytes, count) = le_u32(bytes)?;
 
         Ok((bytes, ThreadStateBase { flavor, count }))
+    }
+}
+
+impl Serialize for ThreadStateBase {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.flavor.serialize());
+        buf.extend(self.count.to_le_bytes());
+        buf
     }
 }
 
@@ -360,6 +387,13 @@ impl ThreadStateX86Flavor {
     }
 }
 
+impl Serialize for ThreadStateX86Flavor {
+    fn serialize(&self) -> Vec<u8> {
+        let flavor = *self as u32;
+        flavor.to_le_bytes().to_vec()
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum X86ThreadState {
     X86ThreadState64(X86ThreadState64),
@@ -372,6 +406,14 @@ impl X86ThreadState {
                 let (bytes, state) = X86ThreadState64::parse(bytes)?;
                 Ok((bytes, X86ThreadState::X86ThreadState64(state)))
             }
+        }
+    }
+}
+
+impl Serialize for X86ThreadState {
+    fn serialize(&self) -> Vec<u8> {
+        match self {
+            X86ThreadState::X86ThreadState64(state) => state.serialize(),
         }
     }
 }
@@ -462,6 +504,34 @@ impl X86ThreadState64 {
     }
 }
 
+impl Serialize for X86ThreadState64 {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.rax.to_le_bytes());
+        buf.extend(self.rbx.to_le_bytes());
+        buf.extend(self.rcx.to_le_bytes());
+        buf.extend(self.rdx.to_le_bytes());
+        buf.extend(self.rdi.to_le_bytes());
+        buf.extend(self.rsi.to_le_bytes());
+        buf.extend(self.rbp.to_le_bytes());
+        buf.extend(self.rsp.to_le_bytes());
+        buf.extend(self.r8.to_le_bytes());
+        buf.extend(self.r9.to_le_bytes());
+        buf.extend(self.r10.to_le_bytes());
+        buf.extend(self.r11.to_le_bytes());
+        buf.extend(self.r12.to_le_bytes());
+        buf.extend(self.r13.to_le_bytes());
+        buf.extend(self.r14.to_le_bytes());
+        buf.extend(self.r15.to_le_bytes());
+        buf.extend(self.rip.to_le_bytes());
+        buf.extend(self.rflags.to_le_bytes());
+        buf.extend(self.cs.to_le_bytes());
+        buf.extend(self.fs.to_le_bytes());
+        buf.extend(self.gs.to_le_bytes());
+        buf
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
 pub enum ThreadStateArm64Flavor {
     Arm64ThreadState64 = 6,
@@ -474,6 +544,13 @@ impl ThreadStateArm64Flavor {
             Some(flavor) => Ok((bytes, flavor)),
             None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
+    }
+}
+
+impl Serialize for ThreadStateArm64Flavor {
+    fn serialize(&self) -> Vec<u8> {
+        let flavor = *self as u32;
+        flavor.to_le_bytes().to_vec()
     }
 }
 
@@ -493,6 +570,14 @@ impl Arm64ThreadState {
     }
 }
 
+impl Serialize for Arm64ThreadState {
+    fn serialize(&self) -> Vec<u8> {
+        match self {
+            Arm64ThreadState::Arm64ThreadState64(state) => state.serialize(),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Arm64ThreadState64 {
     pub x: [u64; 29],
@@ -501,6 +586,21 @@ pub struct Arm64ThreadState64 {
     pub sp: u64,
     pub pc: u64,
     pub cpsr: u64,
+}
+
+impl Serialize for Arm64ThreadState64 {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        for x in self.x.iter() {
+            buf.extend(x.to_le_bytes());
+        }
+        buf.extend(self.fp.to_le_bytes());
+        buf.extend(self.lr.to_le_bytes());
+        buf.extend(self.sp.to_le_bytes());
+        buf.extend(self.pc.to_le_bytes());
+        buf.extend(self.cpsr.to_le_bytes());
+        buf
+    }
 }
 
 impl Arm64ThreadState64 {

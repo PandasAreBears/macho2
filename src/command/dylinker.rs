@@ -2,9 +2,9 @@ use nom::{number::complete::le_u32, IResult};
 
 use crate::helpers::string_upto_null_terminator;
 
-use super::{LCLoadCommand, LoadCommandBase};
+use super::{LCLoadCommand, LoadCommandBase, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DylinkerCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -26,5 +26,36 @@ impl<'a> DylinkerCommand {
                 name,
             },
         ))
+    }
+}
+
+impl Serialize for DylinkerCommand {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+        buf.extend((0xC as u32).to_le_bytes()); // name offset
+        buf.extend(self.name.as_bytes());
+        buf.push(0);
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command::LCLoadCommand;
+
+    #[test]
+    fn test_dylinker_serialise() {
+        let cmd = DylinkerCommand {
+            cmd: LCLoadCommand::LcLoadDylinker,
+            cmdsize: 16,
+            name: "/usr/lib/dyld".to_string(),
+        };
+
+        let serialized = cmd.serialize();
+        let deserialized = DylinkerCommand::parse(&serialized).unwrap().1;
+        assert_eq!(cmd, deserialized);
     }
 }

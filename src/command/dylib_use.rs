@@ -1,8 +1,6 @@
-use std::io::{Read, Seek};
-
 use nom::{number::complete::le_u32, sequence, IResult};
 
-use super::{LCLoadCommand, LoadCommandBase};
+use super::{LCLoadCommand, LoadCommandBase, Serialize};
 
 bitflags::bitflags! {
     #[repr(transparent)]
@@ -23,7 +21,7 @@ impl DylibUseFlags {
 }
 
 // TODO: Implement an enum wrapper over DylibCommand so this can be used on iOS 18+
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DylibUseCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -35,10 +33,10 @@ pub struct DylibUseCommand {
 }
 
 impl DylibUseCommand {
-    pub fn parse<'a, T: Seek + Read>(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+    pub fn parse<'a>(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
 
-        let (_, (nameoff, marker, current_version, compat_version)) =
+        let (cursor, (nameoff, marker, current_version, compat_version)) =
             sequence::tuple((le_u32, le_u32, le_u32, le_u32))(cursor)?;
         let (cursor, flags) = DylibUseFlags::parse(cursor)?;
 
@@ -54,5 +52,42 @@ impl DylibUseCommand {
                 flags,
             },
         ))
+    }
+}
+
+impl Serialize for DylibUseCommand {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+        buf.extend(self.nameoff.to_le_bytes());
+        buf.extend(self.marker.to_le_bytes());
+        buf.extend(self.current_version.to_le_bytes());
+        buf.extend(self.compat_version.to_le_bytes());
+        buf.extend(self.flags.bits().to_le_bytes());
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command::LCLoadCommand;
+
+    #[test]
+    fn test_dylib_use() {
+        let cmd = DylibUseCommand {
+            cmd: LCLoadCommand::LcLoadDylib,
+            cmdsize: 32,
+            nameoff: 0,
+            marker: 0,
+            current_version: 0,
+            compat_version: 0,
+            flags: DylibUseFlags::REEXPORT,
+        };
+
+        let serialized = cmd.serialize();
+        let deserialized = DylibUseCommand::parse(&serialized).unwrap().1;
+        assert_eq!(cmd, deserialized);
     }
 }

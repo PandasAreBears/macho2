@@ -1,8 +1,8 @@
 use nom::{number::complete::le_u64, IResult};
 
-use super::{LCLoadCommand, LoadCommandBase};
+use super::{LCLoadCommand, LoadCommandBase, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct RoutinesCommand64 {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -43,5 +43,48 @@ impl<'a> RoutinesCommand64 {
                 reserved6,
             },
         ))
+    }
+}
+
+impl Serialize for RoutinesCommand64 {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+        buf.extend(self.init_address.to_le_bytes());
+        buf.extend(self.init_module.to_le_bytes());
+        buf.extend(self.reserved1.to_le_bytes());
+        buf.extend(self.reserved2.to_le_bytes());
+        buf.extend(self.reserved3.to_le_bytes());
+        buf.extend(self.reserved4.to_le_bytes());
+        buf.extend(self.reserved5.to_le_bytes());
+        buf.extend(self.reserved6.to_le_bytes());
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command::LCLoadCommand;
+
+    #[test]
+    fn test_routines_command64() {
+        let cmd = RoutinesCommand64 {
+            cmd: LCLoadCommand::LcThread,
+            cmdsize: 72,
+            init_address: 0,
+            init_module: 0,
+            reserved1: 0,
+            reserved2: 0,
+            reserved3: 0,
+            reserved4: 0,
+            reserved5: 0,
+            reserved6: 0,
+        };
+
+        let serialized = cmd.serialize();
+        let deserialized = RoutinesCommand64::parse(&serialized).unwrap().1;
+        assert_eq!(cmd, deserialized);
     }
 }

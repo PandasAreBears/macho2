@@ -2,9 +2,9 @@ use nom::{number::complete::le_u32, IResult};
 
 use crate::helpers::string_upto_null_terminator;
 
-use super::{LCLoadCommand, LoadCommandBase};
+use super::{LCLoadCommand, LoadCommandBase, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct SubClientCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -26,5 +26,36 @@ impl<'a> SubClientCommand {
                 client,
             },
         ))
+    }
+}
+
+impl Serialize for SubClientCommand {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+        buf.extend((0xC as u32).to_le_bytes()); // client offset
+        buf.extend(self.client.as_bytes());
+        buf.push(0);
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command::LCLoadCommand;
+
+    #[test]
+    fn test_sub_client_serialise() {
+        let cmd = SubClientCommand {
+            cmd: LCLoadCommand::LcSubClient,
+            cmdsize: 16,
+            client: "com.apple.securityd".to_string(),
+        };
+
+        let serialized = cmd.serialize();
+        let deserialized = SubClientCommand::parse(&serialized).unwrap().1;
+        assert_eq!(cmd, deserialized);
     }
 }

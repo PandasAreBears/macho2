@@ -7,7 +7,7 @@ use nom::{error::Error, number::complete::le_u8, IResult};
 
 use crate::helpers::{read_uleb, string_upto_null_terminator};
 
-use super::{linkedit_data::LinkeditDataCommand, Raw, Resolved};
+use super::{linkedit_data::LinkeditDataCommand, Raw, Resolved, Serialize};
 
 bitflags::bitflags! {
     #[repr(transparent)]
@@ -33,7 +33,7 @@ impl DyldExportSymbolFlags {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DyldExport {
     pub flags: DyldExportSymbolFlags,
     pub address: u64,
@@ -96,7 +96,7 @@ impl DyldExport {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DyldExportsTrie<A> {
     pub cmd: LinkeditDataCommand,
     pub exports: Option<Vec<DyldExport>>,
@@ -133,5 +133,37 @@ impl<'a> DyldExportsTrie<Resolved> {
                 phantom: PhantomData,
             },
         ))
+    }
+}
+
+impl<T> Serialize for DyldExportsTrie<T> {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command::LCLoadCommand;
+
+    #[test]
+    fn test_dyld_exports_trie() {
+        let dyldtrie = DyldExportsTrie {
+            cmd: LinkeditDataCommand {
+                cmd: LCLoadCommand::LcDyldInfo,
+                cmdsize: 0x10,
+                dataoff: 0x20,
+                datasize: 0x30,
+            },
+            exports: None,
+            phantom: PhantomData,
+        };
+
+        let serialized = dyldtrie.serialize();
+        let deserialized = DyldExportsTrie::<Raw>::parse(&serialized).unwrap().1;
+        assert_eq!(dyldtrie, deserialized);
     }
 }

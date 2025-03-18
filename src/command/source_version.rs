@@ -1,8 +1,8 @@
 use nom::{number::complete::le_u64, IResult};
 
-use super::{LCLoadCommand, LoadCommandBase};
+use super::{LCLoadCommand, LoadCommandBase, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct SourceVersionCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -30,5 +30,48 @@ impl<'a> SourceVersionCommand {
                 version: version_str,
             },
         ))
+    }
+}
+
+impl Serialize for SourceVersionCommand {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+
+        let version = self.version.split('.').collect::<Vec<&str>>();
+        let a = version[0].parse::<u32>().unwrap();
+        let b = version[1].parse::<u32>().unwrap();
+        let c = version[2].parse::<u32>().unwrap();
+        let d = version[3].parse::<u32>().unwrap();
+        let e = version[4].parse::<u32>().unwrap();
+
+        let version = ((a as u64) << 40)
+            | ((b as u64) << 30)
+            | ((c as u64) << 20)
+            | ((d as u64) << 10)
+            | e as u64;
+
+        buf.extend(version.to_le_bytes());
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command::LCLoadCommand;
+
+    #[test]
+    fn test_source_version_serialise() {
+        let cmd = SourceVersionCommand {
+            cmd: LCLoadCommand::LcSourceVersion,
+            cmdsize: 16,
+            version: "20.0.0.1.2".to_string(),
+        };
+
+        let serialized = cmd.serialize();
+        let deserialized = SourceVersionCommand::parse(&serialized).unwrap().1;
+        assert_eq!(cmd, deserialized);
     }
 }

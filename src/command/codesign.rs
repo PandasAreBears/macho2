@@ -20,6 +20,8 @@ use crate::{
     helpers::string_upto_null_terminator,
 };
 
+use super::Serialize;
+
 bitflags::bitflags! {
     #[repr(transparent)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,7 +57,7 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Debug, FromPrimitive)]
+#[derive(Debug, FromPrimitive, PartialEq, Eq)]
 pub enum CodeSignMagic {
     Requirement = 0xfade0c00,
     Requirements = 0xfade0c01,
@@ -79,7 +81,7 @@ impl CodeSignMagic {
     }
 }
 
-#[derive(Debug, FromPrimitive)]
+#[derive(Debug, FromPrimitive, PartialEq, Eq)]
 pub enum CodeSignSupports {
     Scatter = 0x20100,
     TeamId = 0x20200,
@@ -148,7 +150,7 @@ impl CodeSignTypeIndex {
     }
 }
 
-#[derive(Debug, FromPrimitive, Clone, Copy)]
+#[derive(Debug, FromPrimitive, Clone, Copy, PartialEq, Eq)]
 pub enum CodeSignHashType {
     Default = 0,
     SHA1 = 1,
@@ -260,7 +262,7 @@ impl CodeSignBlobIndex {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CodeSignGenericBlob {
     pub magic: CodeSignMagic,
     pub length: u32,
@@ -307,7 +309,7 @@ impl CodeSignSuperBlob {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum CodeSignHash {
     SHA1([u8; 20]),
     SHA256([u8; 32]),
@@ -342,7 +344,7 @@ impl CodeSignHash {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CodeSignCodeDirectory {
     pub generic: CodeSignGenericBlob,
     pub version: CodeSignSupports,
@@ -418,13 +420,13 @@ impl CodeSignCodeDirectory {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CodeSignRequirements {
     // TODO: implement
     pub data: Vec<u8>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CodeSignEntitlements {
     pub generic: CodeSignGenericBlob,
     pub entitlements: String,
@@ -446,7 +448,7 @@ impl CodeSignEntitlements {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CodeSignDerEntitlements {
     // TODO: implement
     pub data: Vec<u8>,
@@ -469,7 +471,7 @@ pub struct CodeSignDerEntitlements {
 //     }
 // }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum CodeSignBlob {
     None,
     CodeDirectory(CodeSignCodeDirectory),
@@ -479,7 +481,7 @@ pub enum CodeSignBlob {
     // SignatureSlot(CodeSignSignature),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CodeSignCommand<A> {
     pub cmd: LinkeditDataCommand,
     pub blobs: Option<Vec<CodeSignBlob>>,
@@ -547,5 +549,37 @@ impl<'a> CodeSignCommand<Resolved> {
                 phantom: PhantomData,
             },
         ))
+    }
+}
+
+impl<T> Serialize for CodeSignCommand<T> {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command::LCLoadCommand;
+
+    #[test]
+    fn test_codesign_serialise() {
+        let cmd = CodeSignCommand {
+            cmd: LinkeditDataCommand {
+                cmd: LCLoadCommand::LcDyldInfo,
+                cmdsize: 16,
+                dataoff: 0,
+                datasize: 0,
+            },
+            blobs: None,
+            phantom: PhantomData,
+        };
+
+        let serialized = cmd.serialize();
+        let deserialized = CodeSignCommand::<Raw>::parse(&serialized).unwrap().1;
+        assert_eq!(cmd, deserialized);
     }
 }

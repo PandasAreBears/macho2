@@ -16,9 +16,9 @@ use num_derive::FromPrimitive;
 
 use crate::helpers::string_upto_null_terminator;
 
-use super::{linkedit_data::LinkeditDataCommand, LoadCommand, Raw, Resolved};
+use super::{linkedit_data::LinkeditDataCommand, LoadCommand, Raw, Resolved, Serialize};
 
-#[derive(Debug, FromPrimitive, Clone)]
+#[derive(Debug, FromPrimitive, Clone, PartialEq, Eq)]
 pub enum DyldFixupPACKey {
     IA = 0,
     IB = 1,
@@ -36,7 +36,7 @@ bitfield! {
     pub auth, set_auth: 63;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtrArm64eRebase {
     pub target: u64,
     pub high8: u8,
@@ -69,7 +69,7 @@ bitfield! {
     pub auth, set_auth: 63;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtrArm64eBind {
     pub ordinal: String,
     pub addend: u16,
@@ -103,7 +103,7 @@ bitfield! {
     pub auth, set_auth: 63;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtrArm64eAuthRebase {
     pub target: u32,
     pub diversity: u16,
@@ -142,7 +142,7 @@ bitfield! {
     pub auth, set_auth: 63;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtrArm64eAuthBind {
     pub ordinal: String,
     pub diversity: u8,
@@ -178,7 +178,7 @@ bitfield! {
     pub bind, set_bind: 63;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtr64Rebase {
     pub target: u64,
     pub high8: u8,
@@ -209,7 +209,7 @@ bitfield! {
     pub auth, set_auth: 63;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtrArm64eRebase24 {
     pub target: u32,
     pub high8: u8,
@@ -244,7 +244,7 @@ bitfield! {
     pub auth, set_auth: 63;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtrArm64eAuthRebase24 {
     pub target: u32,
     pub diversity: u16,
@@ -281,7 +281,7 @@ bitfield! {
     pub auth, set_auth: 63;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtrArm64eBind24 {
     pub ordinal: String,
     pub addend: u16,
@@ -316,7 +316,7 @@ bitfield! {
     pub auth, set_auth: 63;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtrArm64eAuthBind24 {
     pub ordinal: String,
     pub diversity: u8,
@@ -352,7 +352,7 @@ bitfield! {
     pub bind, set_bind: 63;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtr64Bind {
     pub ordinal: String,
     pub addend: u8,
@@ -384,7 +384,7 @@ bitfield! {
     pub is_auth, set_is_auth: 63;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtr64KernelCacheRebase {
     pub target: u32,
     pub cache_level: u8,
@@ -418,7 +418,7 @@ bitfield! {
     pub bind, set_bind: 31;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtr32Rebase {
     pub target: u32,
     pub next: u8,
@@ -445,7 +445,7 @@ bitfield! {
     pub bind, set_bind: 31;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtr32Bind {
     pub ordinal: String,
     pub addend: u8,
@@ -472,7 +472,7 @@ bitfield! {
     pub next, set_next: 31, 30;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtr32CacheRebase {
     pub target: u32,
     pub next: u8,
@@ -495,7 +495,7 @@ bitfield! {
     pub next, set_next: 31, 26;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldChainedPtr32FirmwareRebase {
     pub target: u32,
     pub next: u8,
@@ -511,7 +511,7 @@ impl DyldChainedPtr32FirmwareRebase {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DyldPointerFixup {
     Arm64eRebase24(DyldChainedPtrArm64eRebase24),
     Arm64eAuthRebase24(DyldChainedPtrArm64eAuthRebase24),
@@ -766,7 +766,7 @@ impl DyldPointerFixup {
     }
 }
 
-#[derive(Debug, FromPrimitive)]
+#[derive(Debug, FromPrimitive, PartialEq, Eq)]
 pub enum DyldSymbolsFormat {
     Uncompressed = 0,
     Zlib = 1,
@@ -782,7 +782,7 @@ impl DyldSymbolsFormat {
     }
 }
 
-#[derive(Debug, FromPrimitive)]
+#[derive(Debug, FromPrimitive, PartialEq, Eq)]
 pub enum DyldImportFormat {
     Import = 1,
     ImportAddend = 2,
@@ -808,7 +808,7 @@ bitfield! {
     name_offset, set_name_offset: 31, 9;
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DyldChainedImport {
     pub ordinal: u8,
     pub is_weak: bool,
@@ -835,7 +835,7 @@ impl DyldChainedImport {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DyldStartsInSegment {
     pub size: u32,
     pub page_size: u16,
@@ -892,7 +892,7 @@ impl DyldStartsInSegment {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DyldStartsInImage {
     pub seg_count: u32,
     pub seg_info_offset: Vec<u32>,
@@ -926,7 +926,7 @@ impl DyldStartsInImage {
 }
 
 #[repr(u16)]
-#[derive(Debug, FromPrimitive, Clone, Copy)]
+#[derive(Debug, FromPrimitive, Clone, Copy, PartialEq, Eq)]
 pub enum DyldPointerFormat {
     Arm64e = 1,
     Ptr64 = 2,
@@ -972,7 +972,7 @@ impl DyldPointerFormat {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DyldChainedFixupsHeader {
     pub fixups_version: u32,
     pub starts_offset: u32,
@@ -1008,7 +1008,7 @@ impl DyldChainedFixupsHeader {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DyldFixup {
     pub offset: u64,
     pub fixup: DyldPointerFixup,
@@ -1046,7 +1046,7 @@ impl DyldFixup {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DyldChainedFixupCommand<A> {
     pub cmd: LinkeditDataCommand,
     pub header: Option<DyldChainedFixupsHeader>,
@@ -1110,5 +1110,41 @@ impl<'a> DyldChainedFixupCommand<Resolved> {
                 phantom: PhantomData,
             },
         ))
+    }
+}
+
+impl<T> Serialize for DyldChainedFixupCommand<T> {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::command::LCLoadCommand;
+
+    use super::*;
+
+    #[test]
+    fn test_chained_fixup_serialise() {
+        let cmd = DyldChainedFixupCommand {
+            cmd: LinkeditDataCommand {
+                cmd: LCLoadCommand::LcDyldChainedFixups,
+                cmdsize: 0,
+                dataoff: 0,
+                datasize: 0,
+            },
+            header: None,
+            imports: None,
+            starts: None,
+            fixups: None,
+            phantom: PhantomData,
+        };
+
+        let bytes = cmd.serialize();
+        let deserialised = DyldChainedFixupCommand::<Raw>::parse(&bytes).unwrap().1;
+        assert_eq!(cmd, deserialised);
     }
 }

@@ -14,7 +14,7 @@ use num_derive::FromPrimitive;
 
 use crate::helpers::string_upto_null_terminator;
 
-use super::{LCLoadCommand, LoadCommandBase, Raw, Resolved};
+use super::{LCLoadCommand, LoadCommandBase, Raw, Resolved, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
 pub enum NlistTypeType {
@@ -128,7 +128,7 @@ impl NlistType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Nlist64 {
     pub n_strx: String,
     pub n_type: NlistType,
@@ -163,7 +163,7 @@ impl Nlist64 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SymtabCommand<A> {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -235,5 +235,41 @@ impl<'a> SymtabCommand<Resolved> {
                 phantom: PhantomData,
             },
         ))
+    }
+}
+
+impl<T> Serialize for SymtabCommand<T> {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+        buf.extend(self.symoff.to_le_bytes());
+        buf.extend(self.nsyms.to_le_bytes());
+        buf.extend(self.stroff.to_le_bytes());
+        buf.extend(self.strsize.to_le_bytes());
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_symtab_serialize() {
+        let symtab = SymtabCommand::<Raw> {
+            cmd: LCLoadCommand::LcSymtab,
+            cmdsize: 24,
+            symoff: 0,
+            nsyms: 0,
+            stroff: 0,
+            strsize: 0,
+            symbols: None,
+            phantom: PhantomData,
+        };
+
+        let serialized = symtab.serialize();
+        let deserialized = SymtabCommand::<Raw>::parse(&serialized).unwrap().1;
+        assert_eq!(symtab, deserialized);
     }
 }

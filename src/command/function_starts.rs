@@ -7,15 +7,15 @@ use nom::IResult;
 
 use crate::helpers::read_uleb_many;
 
-use super::{linkedit_data::LinkeditDataCommand, LCLoadCommand, Raw, Resolved};
+use super::{linkedit_data::LinkeditDataCommand, LCLoadCommand, Raw, Resolved, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct FunctionOffset {
     pub offset: u64,
     pub size: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct FunctionStartsCommand<A> {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -77,5 +77,38 @@ impl<'a> FunctionStartsCommand<Resolved> {
                 phantom: PhantomData,
             },
         ))
+    }
+}
+
+impl<T> Serialize for FunctionStartsCommand<T> {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+        buf.extend(self.dataoff.to_le_bytes());
+        buf.extend(self.datasize.to_le_bytes());
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command::LCLoadCommand;
+
+    #[test]
+    fn test_function_starts() {
+        let func_starts = FunctionStartsCommand {
+            cmd: LCLoadCommand::LcFunctionStarts,
+            cmdsize: 0x10,
+            dataoff: 0x20,
+            datasize: 0x30,
+            funcs: None,
+            phantom: PhantomData,
+        };
+
+        let serialized = func_starts.serialize();
+        let deserialized = FunctionStartsCommand::<Raw>::parse(&serialized).unwrap().1;
+        assert_eq!(func_starts, deserialized);
     }
 }

@@ -5,9 +5,9 @@ use nom::{
 
 use crate::helpers::string_upto_null_terminator;
 
-use super::{LCLoadCommand, LoadCommandBase};
+use super::{LCLoadCommand, LoadCommandBase, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct NoteCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -36,5 +36,40 @@ impl<'a> NoteCommand {
                 size,
             },
         ))
+    }
+}
+
+impl Serialize for NoteCommand {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+        buf.extend((0x1C as u32).to_le_bytes()); // data_owner offset
+        buf.extend(self.offset.to_le_bytes());
+        buf.extend(self.size.to_le_bytes());
+        buf.extend(self.data_owner.as_bytes());
+        buf.push(0);
+        buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command::LCLoadCommand;
+
+    #[test]
+    fn test_note_serialise() {
+        let cmd = NoteCommand {
+            cmd: LCLoadCommand::LcNote,
+            cmdsize: 32,
+            data_owner: "com.apple.dt.Xcode".to_string(),
+            offset: 0,
+            size: 0,
+        };
+
+        let serialized = cmd.serialize();
+        let deserialized = NoteCommand::parse(&serialized).unwrap().1;
+        assert_eq!(cmd, deserialized);
     }
 }
