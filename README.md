@@ -13,14 +13,12 @@ A better parser for the MachO file format.
 - [x] Tool for extracting thin MachO from fat MachO
 - [x] Parse ObjC runtime data
 - [x] Support for lightweight parsing which only reads the mach header and load commands
+- [x] Some limited support for writing MachO files
 
 ## TODO
 
 - [ ] Parse CMS signature in LC_CODE_SIGNATURE
-- [ ] Resolve library ordinals across several load commands
 - [ ] Make the tools more user-friendly, and make more tools
-
-
 
 ## Installation
 
