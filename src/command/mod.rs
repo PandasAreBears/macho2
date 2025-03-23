@@ -249,26 +249,18 @@ where
 {
     let mut ldcmds = vec![0u8; header.sizeofcmds() as usize];
     buf.seek(SeekFrom::Start(header.size() as u64))
-        .map_err(|_| MachOErr {
-            detail: "Unable to seek to start of file".to_string(),
-        })?;
-    buf.read_exact(&mut ldcmds).map_err(|_| MachOErr {
-        detail: "Unable to read load commands".to_string(),
-    })?;
+        .map_err(|e| MachOErr::IOError(e))?;
+    buf.read_exact(&mut ldcmds).map_err(|e| MachOErr::IOError(e))?;
 
     let mut results = Vec::new();
     let mut remaining_ldcmds = &ldcmds[..];
 
     for i in 0..header.ncmds() {
-        let (_, base) = LoadCommandBase::parse(remaining_ldcmds).map_err(|_| MachOErr {
-            detail: format!("Unable to parse load command base for index {}", i),
-        })?;
+        let (_, base) = LoadCommandBase::parse(remaining_ldcmds).map_err(|_| MachOErr::ParsingError(format!("Unable to parse load command base for index {}", i)))?;
 
         let cmdsize = base.cmdsize as usize;
         if cmdsize > remaining_ldcmds.len() {
-            return Err(MachOErr {
-                detail: format!("Load command size exceeds available data at index {}", i),
-            });
+            return Err(MachOErr::InvalidValue(format!("Load command size exceeds available data at index {}", i)));
         }
 
         let cmd_bytes = &remaining_ldcmds[..cmdsize];
@@ -293,9 +285,7 @@ impl LoadCommand<Resolved> {
                 |buf, base, ldcmd,  prev| match LoadCommand::<Resolved>::parse(
                     buf, base, ldcmd, prev,
                 ) {
-                    Err(_) => Err(MachOErr {
-                        detail: "Unable to parse load command".to_string(),
-                    }),
+                    Err(_) => Err(MachOErr::InvalidValue("Unable to parse load command".to_string())),
                     Ok((_, cmd)) => Ok(cmd),
                 },
             )?;
@@ -529,9 +519,7 @@ impl LoadCommand<Raw> {
         let cmds =
             iterate_load_commands(buf, header, |_, base, ldcmd, _| {
                 match LoadCommand::<Raw>::parse(base, ldcmd) {
-                    Err(_) => Err(MachOErr {
-                        detail: "Unable to parse load command".to_string(),
-                    }),
+                    Err(_) => Err(MachOErr::ParsingError("Unable to parse load command".to_string())),
                     Ok((_, cmd)) => Ok(cmd),
                 }
             })?;

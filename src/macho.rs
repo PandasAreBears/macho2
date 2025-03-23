@@ -1,6 +1,7 @@
 use std::error;
 use std::io::{Read, Seek, SeekFrom};
 use std::marker::PhantomData;
+use std::num::NonZeroU64;
 
 use crate::command::dyld_chained_fixup::DyldFixup;
 use crate::command::segment::SegmentCommand64;
@@ -13,13 +14,17 @@ use crate::machine;
 use std::fmt;
 
 #[derive(Debug)]
-pub struct MachOErr {
-    pub detail: String,
+pub enum MachOErr {
+    IOError(std::io::Error),
+    MagicError,
+    InvalidValue(String), 
+    ParsingError(String), 
+    GenericError(String), 
 }
 
 impl fmt::Display for MachOErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "MachO Error")
+        write!(f, "{:?}", self)
     }
 }
 impl error::Error for MachOErr {}
@@ -38,9 +43,7 @@ impl ImageValue {
         match self {
             ImageValue::Value(v) => Ok(*v),
             ImageValue::Rebase(v) => Ok(*v),
-            _ => Err(MachOErr {
-                detail: "Unexpected bind value during ImageValue unwrap".to_string(),
-            }),
+            _ => Err(MachOErr::InvalidValue("Unexpected bind value during ImageValue unwrap".to_string())),
         }
     }
 }
@@ -104,9 +107,7 @@ impl<T: Seek + Read> MachO<T, Resolved> {
 
     pub fn read_offset_u64(&mut self, offset: u64) -> MachOResult<ImageValue> {
         if !self.is_valid_offset(offset) {
-            return Err(MachOErr {
-                detail: format!("Invalid offset: 0x{:x}", offset),
-            });
+            return Err(MachOErr::InvalidValue(format!("Invalid offset: 0x{:x}", offset)));
         }
 
         // When the offset is a dyld fixup, it can be 1. a rebase, which is easy
@@ -145,16 +146,14 @@ impl<T: Seek + Read> MachO<T, Resolved> {
         }
 
         let mut value = [0u8; 8];
-        self.buf.seek(SeekFrom::Start(offset)).unwrap();
-        self.buf.read_exact(&mut value).unwrap();
+        self.buf.seek(SeekFrom::Start(offset)).map_err(|e| MachOErr::IOError(e))?;
+        self.buf.read_exact(&mut value).map_err(|e| MachOErr::IOError(e))?;
         Ok(ImageValue::Value(u64::from_le_bytes(value)))
     }
 
     pub fn read_offset_u32(&mut self, offset: u64) -> MachOResult<u32> {
         if !self.is_valid_offset(offset) {
-            return Err(MachOErr {
-                detail: format!("Invalid offset: 0x{:x}", offset),
-            });
+            return Err(MachOErr::InvalidValue(format!("Invalid offset: 0x{:x}", offset)));
         }
 
         let mut value = [0u8; 4];
@@ -177,12 +176,8 @@ impl<T: Seek + Read> MachO<T, Resolved> {
 impl<T: Seek + Read, A> MachO<T, A> {
     pub fn is_macho_magic(buf: &mut T) -> MachOResult<bool> {
         let mut magic: [u8; 4] = [0; 4];
-        buf.seek(SeekFrom::Start(0)).map_err(|_| MachOErr {
-            detail: "Unable to seek to start of file".to_string(),
-        })?;
-        buf.read_exact(&mut magic).map_err(|_| MachOErr {
-            detail: "Unable to read magic from file".to_string(),
-        })?;
+        buf.seek(SeekFrom::Start(0)).map_err(|e| MachOErr::IOError(e))?;
+        buf.read_exact(&mut magic).map_err(|e| MachOErr::IOError(e))?;
 
         let magic = u32::from_le_bytes(magic);
         Ok(magic == MHMagic::MhMagic as u32 || magic == MHMagic::MhMagic64 as u32)
@@ -200,9 +195,7 @@ impl<T: Seek + Read, A> MachO<T, A> {
             .segs
             .iter()
             .find(|seg| seg.vmaddr <= vm_addr && vm_addr < seg.vmaddr + seg.vmsize)
-            .ok_or(MachOErr {
-                detail: "Invalid vm addr.".to_string(),
-            })?;
+            .ok_or(MachOErr::InvalidValue("Invalid vm addr.".to_string()))?;
 
         let offset = vm_addr - seg.vmaddr + seg.fileoff;
         Ok(offset)
@@ -213,43 +206,29 @@ impl<T: Seek + Read, A> MachO<T, A> {
             .segs
             .iter()
             .find(|seg| seg.fileoff <= offset && offset < seg.fileoff + seg.filesize)
-            .ok_or(MachOErr {
-                detail: "Invalid offset.".to_string(),
-            })?;
+            .ok_or(MachOErr::InvalidValue("Invalid offset.".to_string()))?;
 
         let vm_addr = offset - seg.fileoff + seg.vmaddr;
         Ok(vm_addr)
     }
 
-    pub fn read_null_terminated_string(&mut self, offset: u64) -> MachOResult<String> {
-        if offset == 0 {
-            return Err(MachOErr {
-                detail: "Invalid offset: 0".to_string(),
-            });
-        }
-
+    pub fn read_null_terminated_string(&mut self, offset: NonZeroU64) -> MachOResult<String> {
         let mut string_data = Vec::new();
         let mut byte = [0u8; 1];
         let mut offset = offset;
         loop {
             self.buf
-                .seek(SeekFrom::Start(offset))
-                .map_err(|_| MachOErr {
-                    detail: "Unable to seek to offset".to_string(),
-                })?;
-            self.buf.read_exact(&mut byte).map_err(|_| MachOErr {
-                detail: "Unable to read byte".to_string(),
-            })?;
+                .seek(SeekFrom::Start(offset.get()))
+                .map_err(|e| MachOErr::IOError(e))?;
+            self.buf.read_exact(&mut byte).map_err(|e| MachOErr::IOError(e))?;
             if byte[0] == 0 {
                 break;
             }
             string_data.push(byte[0]);
-            offset += 1;
+            offset = offset.saturating_add(1);
         }
 
-        Ok(String::from_utf8(string_data).map_err(|_| MachOErr {
-            detail: "Unable to convert bytes to UTF8 string".to_string(),
-        })?)
+        Ok(String::from_utf8(string_data).map_err(|_| MachOErr::InvalidValue("Unable to convert bytes to UTF8 string".to_string()))?)
     }
 
     pub fn serialize(&self) -> Vec<u8> {
@@ -272,29 +251,16 @@ pub struct FatMachO<'a, T: Seek + Read, A> {
 impl<'a, T: Seek + Read, A> FatMachO<'a, T, A> {
     pub fn is_fat_magic(buf: &'a mut T) -> MachOResult<bool> {
         let mut magic = [0; 4];
-        buf.seek(SeekFrom::Start(0)).map_err(|_| MachOErr {
-            detail: "Unable to seek to start of file".to_string(),
-        })?;
-        buf.read_exact(&mut magic).map_err(|_| MachOErr {
-            detail: "Unable to read magic from file".to_string(),
-        })?;
+        buf.seek(SeekFrom::Start(0)).map_err(|e| MachOErr::IOError(e))?;
+        buf.read_exact(&mut magic).map_err(|e| MachOErr::IOError(e))?;
         let magic = u32::from_be_bytes(magic);
         Ok(magic == FatMagic::Fat as u32 || magic == FatMagic::Fat64 as u32)
     }
 
     pub fn parse(buf: &'a mut T) -> MachOResult<Self> {
         let mut bytes = Vec::new();
-        if let Err(_) = buf.seek(SeekFrom::Start(0)) {
-            return Err(MachOErr {
-                detail: "Unable to seek to start of file".to_string(),
-            });
-        }
-
-        if let Err(_) = buf.read_to_end(&mut bytes) {
-            return Err(MachOErr {
-                detail: "Unable to read file to end".to_string(),
-            });
-        }
+        buf.seek(SeekFrom::Start(0)).map_err(|e| MachOErr::IOError(e))?;
+        buf.read_to_end(&mut bytes).map_err(|e| MachOErr::IOError(e))?;
 
         let (mut cursor, header) = FatHeader::parse(&bytes).expect("Unable to parse FatHeader");
         let mut archs = Vec::new();
@@ -322,20 +288,14 @@ impl<'a, T: Seek + Read> FatMachO<'a, T, Resolved> {
             .archs
             .iter()
             .find(|arch| arch.cputype() == cputype)
-            .ok_or(MachOErr {
-                detail: format!("CPU type {:?} not found in fat binary", cputype),
-            })?;
+            .ok_or(MachOErr::InvalidValue(format!("CPU type {:?} not found in fat binary", cputype)))?;
         let offset = arch.offset();
         let size = arch.size();
 
-        let mut partial = FileSubset::new(self.buf, offset, size).map_err(|_| MachOErr {
-            detail: "Unable to create subset".to_string(),
-        })?;
+        let mut partial = FileSubset::new(self.buf, offset, size).map_err(|_| MachOErr::InvalidValue("Unable to create subset".to_string()))?;
 
         if !MachO::<_, A>::is_macho_magic(&mut partial)? {
-            return Err(MachOErr {
-                detail: "Fat MachO slice is not a MachO".to_string(),
-            });
+            return Err(MachOErr::InvalidValue("Fat MachO slice is not a MachO".to_string()));
         }
 
         MachO::<_, Resolved>::parse(partial)
@@ -351,20 +311,14 @@ impl<'a, T: Seek + Read> FatMachO<'a, T, Raw> {
             .archs
             .iter()
             .find(|arch| arch.cputype() == cputype)
-            .ok_or(MachOErr {
-                detail: format!("CPU type {:?} not found in fat binary", cputype),
-            })?;
+            .ok_or(MachOErr::InvalidValue(format!("CPU type {:?} not found in fat binary", cputype)))?;
         let offset = arch.offset();
         let size = arch.size();
 
-        let mut partial = FileSubset::new(self.buf, offset, size).map_err(|_| MachOErr {
-            detail: "Unable to create subset".to_string(),
-        })?;
+        let mut partial = FileSubset::new(self.buf, offset, size).map_err(|_| MachOErr::InvalidValue("Unable to create subset".to_string()))?;
 
         if !MachO::<_, A>::is_macho_magic(&mut partial)? {
-            return Err(MachOErr {
-                detail: "Fat MachO slice is not a MachO".to_string(),
-            });
+            return Err(MachOErr::InvalidValue("Fat MachO slice is not a MachO".to_string()));
         }
 
         MachO::<_, Raw>::parse(partial)

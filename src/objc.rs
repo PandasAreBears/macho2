@@ -3,6 +3,7 @@ use lazy_static::lazy_static;
 use nom::number::complete::le_u32;
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
+use std::num::NonZeroU64;
 use std::sync::{Arc, Mutex};
 
 use num_derive::FromPrimitive;
@@ -108,9 +109,11 @@ impl ObjCProperty {
         let attributes = macho.read_offset_u64(offset + 8)?.unwrap()?;
 
         let name_off = macho.vm_addr_to_offset(name)?;
+        let name_off = NonZeroU64::new(name_off).ok_or(MachOErr::InvalidValue("Failed to parse name offset".to_string()))?;
         let name = macho.read_null_terminated_string(name_off)?;
 
         let attributes_off = macho.vm_addr_to_offset(attributes)?;
+        let attributes_off = NonZeroU64::new(attributes_off).ok_or(MachOErr::InvalidValue("Failed to parse attributes offset".to_string()))?;
         let attributes = macho.read_null_terminated_string(attributes_off)?;
 
         let prop = ObjCProperty { name, attributes };
@@ -246,6 +249,7 @@ impl ObjCCategory {
         let instance_properties = macho.read_offset_u64(offset + 40)?.unwrap()?;
 
         let name_off = macho.vm_addr_to_offset(name)?;
+        let name_off = NonZeroU64::new(name_off).ok_or(MachOErr::InvalidValue("Failed to parse name offset".to_string()))?;
         let name = macho.read_null_terminated_string(name_off)?;
 
         let instance_methods = if instance_methods != 0 {
@@ -327,22 +331,19 @@ impl ObjCIVar {
         macho.buf.seek(SeekFrom::Start(offset)).unwrap();
         macho.buf.read_exact(&mut data).unwrap();
 
-        let offset_ = u32::from_le_bytes(data[0..4].try_into().map_err(|_| MachOErr {
-            detail: "Failed to parse offset".to_string(),
-        })?);
+        let offset_ = u32::from_le_bytes(data[0..4].try_into().map_err(|_| MachOErr::InvalidValue("Failed to parse offset".to_string()))?);
         let name = macho.read_offset_u64(offset + 8)?.unwrap()?;
         let type_ = macho.read_offset_u64(offset + 16)?.unwrap()?;
-        let alignment = u32::from_le_bytes(data[24..28].try_into().map_err(|_| MachOErr {
-            detail: "Failed to parse alignment".to_string(),
-        })?);
-        let size = u32::from_le_bytes(data[28..32].try_into().map_err(|_| MachOErr {
-            detail: "Failed to parse size".to_string(),
-        })?);
+        let alignment = u32::from_le_bytes(data[24..28].try_into().map_err(|_| MachOErr::InvalidValue("Failed to parse alignment".to_string()))?);
+        let size = u32::from_le_bytes(data[28..32].try_into().map_err(|_| MachOErr::InvalidValue("Failed to parse size".to_string()))?);
 
         let name_off = macho.vm_addr_to_offset(name)?;
-        let name = macho.read_null_terminated_string(name_off)?;
+        
+        let string_off = NonZeroU64::new(name_off).ok_or(MachOErr::InvalidValue("Failed to parse name offset".to_string()))?;
+        let name = macho.read_null_terminated_string(string_off)?;
 
         let type_off = macho.vm_addr_to_offset(type_)?;
+        let type_off = NonZeroU64::new(type_off).ok_or(MachOErr::InvalidValue("Failed to parse type offset".to_string()))?;
         let type_ = macho.read_null_terminated_string(type_off)?;
 
         let ivar = ObjCIVar {
@@ -525,8 +526,10 @@ impl ObjCMethod {
         // produced by dsc_extractor, don't crash
         let sel_vmaddr = macho.read_offset_u64(name_off as u64)?.unwrap()?;
         let sel_off = macho.vm_addr_to_offset(sel_vmaddr)?;
+        let sel_off = NonZeroU64::new(sel_off).ok_or(MachOErr::InvalidValue("Failed to parse selector offset".to_string()))?;
         let name = macho.read_null_terminated_string(sel_off)?;
-        let types = macho.read_null_terminated_string(types_off as u64)?;
+        let types_off = NonZeroU64::new(types_off as u64).ok_or(MachOErr::InvalidValue("Failed to parse types offset".to_string()))?;
+        let types = macho.read_null_terminated_string(types_off)?;
 
         let method = ObjCMethod {
             name,
@@ -570,9 +573,11 @@ impl ObjCMethod {
         let imp = macho.read_offset_u64(offset + 16)?.unwrap()?;
 
         let name_off = macho.vm_addr_to_offset(name)?;
+        let name_off = NonZeroU64::new(name_off).ok_or(MachOErr::InvalidValue("Failed to parse name offset".to_string()))?;
         let name = macho.read_null_terminated_string(name_off)?;
 
         let types_off = macho.vm_addr_to_offset(types)?;
+        let types_off = NonZeroU64::new(types_off).ok_or(MachOErr::InvalidValue("Failed to parse types offset".to_string()))?;
         let types = macho.read_null_terminated_string(types_off)?;
 
         let method = ObjCMethod { name, types, imp };
@@ -710,6 +715,7 @@ impl ObjCProtocol {
 
         let name = macho.read_offset_u64(offset + 8)?.unwrap()?;
         let name_off = macho.vm_addr_to_offset(name)?;
+        let name_off = NonZeroU64::new(name_off).ok_or(MachOErr::InvalidValue("Failed to parse name offset".to_string()))?;
         let name = macho.read_null_terminated_string(name_off)?;
 
         let protocols = macho.read_offset_u64(offset + 16)?.unwrap()?;
@@ -879,6 +885,7 @@ impl ObjCClassRO {
         let base_properties = macho.read_offset_u64(file_off + 64)?.unwrap()?;
 
         let name_off = macho.vm_addr_to_offset(name).unwrap();
+        let name_off = NonZeroU64::new(name_off).ok_or(MachOErr::InvalidValue("Failed to parse name offset".to_string()))?;
         let name_str = macho.read_null_terminated_string(name_off)?;
 
         let base_methods = if base_methods != 0 {
@@ -1197,6 +1204,7 @@ impl ObjCSelRef {
 
         let vmaddr = macho.read_offset_u64(offset)?.unwrap()?;
         let sel_off = macho.vm_addr_to_offset(vmaddr)?;
+        let sel_off = NonZeroU64::new(sel_off).ok_or(MachOErr::InvalidValue("Failed to parse selector offset".to_string()))?;
         let sel = macho.read_null_terminated_string(sel_off)?;
 
         let selref = ObjCSelRef { sel, vmaddr };

@@ -200,18 +200,12 @@ impl MachHeader {
     where
         T: Seek + Read,
     {
-        buf.seek(SeekFrom::Start(0)).map_err(|_| MachOErr {
-            detail: "Failed to seek to start of file".to_string(),
-        })?;
+        buf.seek(SeekFrom::Start(0)).map_err(|e| MachOErr::IOError(e))?;
 
         let mut magic = [0; std::mem::size_of::<MHMagic>()];
-        buf.read_exact(&mut magic).map_err(|_| MachOErr {
-            detail: "Failed to read magic number".to_string(),
-        })?;
+        buf.read_exact(&mut magic).map_err(|e| MachOErr::IOError(e))?;
 
-        let (_, magic) = MHMagic::parse_le(&magic).map_err(|_| MachOErr {
-            detail: "Failed to parse magic number".to_string(),
-        })?;
+        let (_, magic) = MHMagic::parse_le(&magic).map_err(|_| MachOErr::MagicError)?;
 
         let header_size = match magic {
             MHMagic::MhMagic => MachHeader32::SIZE,
@@ -219,12 +213,8 @@ impl MachHeader {
         };
 
         let mut header = vec![0; header_size as usize];
-        buf.seek(SeekFrom::Start(0)).map_err(|_| MachOErr {
-            detail: "Failed to seek to start of file".to_string(),
-        })?;
-        buf.read_exact(&mut header).map_err(|_| MachOErr {
-            detail: "Failed to read header".to_string(),
-        })?;
+        buf.seek(SeekFrom::Start(0)).map_err(|e| MachOErr::IOError(e))?;
+        buf.read_exact(&mut header).map_err(|e| MachOErr::IOError(e))?;
 
         match magic {
             MHMagic::MhMagic => {
