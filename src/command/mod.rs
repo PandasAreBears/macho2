@@ -243,7 +243,6 @@ where
         &mut T,
         LoadCommandBase,
         &[u8],
-        &MachHeader,
         &Vec<LoadCommand<A>>,
     ) -> MachOResult<LoadCommand<A>>,
     T: Seek + Read,
@@ -273,7 +272,7 @@ where
         }
 
         let cmd_bytes = &remaining_ldcmds[..cmdsize];
-        let result = f(buf, base, cmd_bytes, &header, &results)?;
+        let result = f(buf, base, cmd_bytes, &results)?;
         results.push(result);
 
         remaining_ldcmds = &remaining_ldcmds[cmdsize..];
@@ -291,8 +290,8 @@ impl LoadCommand<Resolved> {
             iterate_load_commands(
                 buf,
                 header,
-                |buf, base, ldcmd, header, prev| match LoadCommand::<Resolved>::parse(
-                    buf, base, ldcmd, header, prev,
+                |buf, base, ldcmd,  prev| match LoadCommand::<Resolved>::parse(
+                    buf, base, ldcmd, prev,
                 ) {
                     Err(_) => Err(MachOErr {
                         detail: "Unable to parse load command".to_string(),
@@ -308,7 +307,6 @@ impl LoadCommand<Resolved> {
         buf: &mut T,
         base: LoadCommandBase,
         ldcmd: &'a [u8],
-        header: &MachHeader,
         prev_cmds: &Vec<LoadCommand<Resolved>>,
     ) -> IResult<&'a [u8], Self>
     where
@@ -351,7 +349,7 @@ impl LoadCommand<Resolved> {
                 Ok((bytes, LoadCommand::Symseg(cmd)))
             }
             LCLoadCommand::LcThread | LCLoadCommand::LcUnixThread => {
-                let (bytes, cmd) = ThreadCommand::parse(ldcmd, *header.cputype()).unwrap();
+                let (bytes, cmd) = ThreadCommand::parse(ldcmd).unwrap();
                 match base.cmd {
                     LCLoadCommand::LcThread => Ok((bytes, LoadCommand::Thread(cmd))),
                     LCLoadCommand::LcUnixThread => Ok((bytes, LoadCommand::UnixThread(cmd))),
@@ -529,8 +527,8 @@ impl LoadCommand<Raw> {
         T: Seek + Read,
     {
         let cmds =
-            iterate_load_commands(buf, header, |_, base, ldcmd, header, _| {
-                match LoadCommand::<Raw>::parse(base, ldcmd, header) {
+            iterate_load_commands(buf, header, |_, base, ldcmd, _| {
+                match LoadCommand::<Raw>::parse(base, ldcmd) {
                     Err(_) => Err(MachOErr {
                         detail: "Unable to parse load command".to_string(),
                     }),
@@ -544,7 +542,6 @@ impl LoadCommand<Raw> {
     pub fn parse<'a>(
         base: LoadCommandBase,
         ldcmd: &'a [u8],
-        header: &MachHeader,
     ) -> IResult<&'a [u8], Self> {
         match base.cmd {
             LCLoadCommand::LcSegment => {
@@ -583,7 +580,7 @@ impl LoadCommand<Raw> {
                 Ok((bytes, LoadCommand::Symseg(cmd)))
             }
             LCLoadCommand::LcThread | LCLoadCommand::LcUnixThread => {
-                let (bytes, cmd) = ThreadCommand::parse(ldcmd, *header.cputype()).unwrap();
+                let (bytes, cmd) = ThreadCommand::parse(ldcmd).unwrap();
                 match base.cmd {
                     LCLoadCommand::LcThread => Ok((bytes, LoadCommand::Thread(cmd))),
                     LCLoadCommand::LcUnixThread => Ok((bytes, LoadCommand::UnixThread(cmd))),

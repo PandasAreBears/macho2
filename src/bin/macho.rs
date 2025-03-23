@@ -1,7 +1,5 @@
 use macho2::{
-    command::{segment::Protection, LoadCommand, Resolved},
-    header::MachHeader,
-    macho::{FatMachO, MachO, MachOErr, MachOResult},
+    command::{segment::Protection, LoadCommand, Resolved}, header::MachHeader, machine::ThreadState, macho::{FatMachO, MachO, MachOErr, MachOResult}
 };
 use std::{
     env,
@@ -140,7 +138,24 @@ fn print_load_command(lc: &LoadCommand<Resolved>) {
         ),
         LoadCommand::Symseg(_) => println!("LC_SYMSEG"),
         LoadCommand::Thread(_) => println!("LC_THREAD"),
-        LoadCommand::UnixThread(_) => println!("LC_UNIXTHREAD"),
+        LoadCommand::UnixThread(threadcmd) => {
+            let thread = threadcmd.threads.get(0);
+            if thread.is_some() {
+                match thread.unwrap() {
+                    ThreadState::X86State64(x86_thread_state64) => {
+                        println!(
+                            "LC_UNIXTHREAD  rip=0x{:016x} rsp=0x{:016x}", x86_thread_state64.rip, x86_thread_state64.rsp);
+                    },
+                    ThreadState::Arm64State64(arm64_thread_state64) => {
+                        println!(
+                            "LC_UNIXTHREAD  pc=0x{:016x} sp=0x{:016x}", arm64_thread_state64.pc, arm64_thread_state64.sp);
+                    },
+                }
+            }
+            else {
+                println!("LC_UNIXTHREAD nthreads={}", threadcmd.threads.len());
+            }
+        }
         LoadCommand::Dysymtab(dysymtab_command) => println!(
             "LC_DYSYMTAB  nlocals={} nextdefs={} nundefs={} nindirects={}",
             dysymtab_command.nlocalsym,

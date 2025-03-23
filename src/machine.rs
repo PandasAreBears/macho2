@@ -288,53 +288,45 @@ impl Serialize for CpuSubTypeArm64 {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
 pub enum ThreadStateFlavor {
-    X86Flavor(ThreadStateX86Flavor),
-    Arm64Flavor(ThreadStateArm64Flavor),
+    X86ThreadState64 = 4,
+    Arm64ThreadState64 = 6,
 }
 
 impl ThreadStateFlavor {
-    pub fn parse(bytes: &[u8], cpu: CpuType) -> IResult<&[u8], ThreadStateFlavor> {
-        match cpu {
-            CpuType::X86_64 => {
-                let (bytes, flavor) = ThreadStateX86Flavor::parse(bytes)?;
-                Ok((bytes, ThreadStateFlavor::X86Flavor(flavor)))
-            }
-            CpuType::Arm64 => {
-                let (bytes, flavor) = ThreadStateArm64Flavor::parse(bytes)?;
-                Ok((bytes, ThreadStateFlavor::Arm64Flavor(flavor)))
-            }
-            _ => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], ThreadStateFlavor> {
+        let (bytes, flavor) = le_u32(bytes)?;
+        match num::FromPrimitive::from_u32(flavor) {
+            Some(flavor) => Ok((bytes, flavor)),
+            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
 }
 
 impl Serialize for ThreadStateFlavor {
     fn serialize(&self) -> Vec<u8> {
-        match self {
-            ThreadStateFlavor::X86Flavor(flavor) => flavor.serialize(),
-            ThreadStateFlavor::Arm64Flavor(flavor) => flavor.serialize(),
-        }
+        let flavor = *self as u32;
+        flavor.to_le_bytes().to_vec()
     }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ThreadState {
-    X86State(X86ThreadState),
-    Arm64State(Arm64ThreadState),
+    X86State64(X86ThreadState64),
+    Arm64State64(Arm64ThreadState64),
 }
 
 impl ThreadState {
     pub fn parse(bytes: &[u8], base: ThreadStateBase) -> IResult<&[u8], ThreadState> {
         match base.flavor {
-            ThreadStateFlavor::X86Flavor(flavor) => {
-                let (bytes, state) = X86ThreadState::parse(bytes, flavor)?;
-                Ok((bytes, ThreadState::X86State(state)))
+            ThreadStateFlavor::X86ThreadState64 => {
+                let (bytes, state) = X86ThreadState64::parse(bytes)?;
+                Ok((bytes, ThreadState::X86State64(state)))
             }
-            ThreadStateFlavor::Arm64Flavor(flavor) => {
-                let (bytes, state) = Arm64ThreadState::parse(bytes, flavor)?;
-                Ok((bytes, ThreadState::Arm64State(state)))
+            ThreadStateFlavor::Arm64ThreadState64 => {
+                let (bytes, state) = Arm64ThreadState64::parse(bytes)?;
+                Ok((bytes, ThreadState::Arm64State64(state)))
             }
         }
     }
@@ -343,23 +335,23 @@ impl ThreadState {
 impl Serialize for ThreadState {
     fn serialize(&self) -> Vec<u8> {
         match self {
-            ThreadState::X86State(state) => state.serialize(),
-            ThreadState::Arm64State(state) => state.serialize(),
+            ThreadState::X86State64(state) => state.serialize(),
+            ThreadState::Arm64State64(state) => state.serialize(),
         }
     }
 }
 
 pub struct ThreadStateBase {
     pub flavor: ThreadStateFlavor,
-    pub count: u32,
+    pub size: u32,
 }
 
 impl ThreadStateBase {
-    pub fn parse(bytes: &[u8], cpu: CpuType) -> IResult<&[u8], ThreadStateBase> {
-        let (bytes, flavor) = ThreadStateFlavor::parse(bytes, cpu)?;
-        let (bytes, count) = le_u32(bytes)?;
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], ThreadStateBase> {
+        let (bytes, flavor) = ThreadStateFlavor::parse(bytes)?;
+        let (bytes, size) = le_u32(bytes)?;
 
-        Ok((bytes, ThreadStateBase { flavor, count }))
+        Ok((bytes, ThreadStateBase { flavor, size }))
     }
 }
 
@@ -367,7 +359,7 @@ impl Serialize for ThreadStateBase {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.flavor.serialize());
-        buf.extend(self.count.to_le_bytes());
+        buf.extend(self.size.to_le_bytes());
         buf
     }
 }
@@ -394,29 +386,6 @@ impl Serialize for ThreadStateX86Flavor {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum X86ThreadState {
-    X86ThreadState64(X86ThreadState64),
-}
-
-impl X86ThreadState {
-    pub fn parse(bytes: &[u8], flavor: ThreadStateX86Flavor) -> IResult<&[u8], X86ThreadState> {
-        match flavor {
-            ThreadStateX86Flavor::X86ThreadState64 => {
-                let (bytes, state) = X86ThreadState64::parse(bytes)?;
-                Ok((bytes, X86ThreadState::X86ThreadState64(state)))
-            }
-        }
-    }
-}
-
-impl Serialize for X86ThreadState {
-    fn serialize(&self) -> Vec<u8> {
-        match self {
-            X86ThreadState::X86ThreadState64(state) => state.serialize(),
-        }
-    }
-}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct X86ThreadState64 {
@@ -444,6 +413,8 @@ pub struct X86ThreadState64 {
 }
 
 impl X86ThreadState64 {
+    pub const SIZE: u32 = 42;
+
     pub fn parse(bytes: &[u8]) -> IResult<&[u8], X86ThreadState64> {
         let (
             bytes,
@@ -555,30 +526,6 @@ impl Serialize for ThreadStateArm64Flavor {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Arm64ThreadState {
-    Arm64ThreadState64(Arm64ThreadState64),
-}
-
-impl Arm64ThreadState {
-    pub fn parse(bytes: &[u8], flavor: ThreadStateArm64Flavor) -> IResult<&[u8], Arm64ThreadState> {
-        match flavor {
-            ThreadStateArm64Flavor::Arm64ThreadState64 => {
-                let (bytes, state) = Arm64ThreadState64::parse(bytes)?;
-                Ok((bytes, Arm64ThreadState::Arm64ThreadState64(state)))
-            }
-        }
-    }
-}
-
-impl Serialize for Arm64ThreadState {
-    fn serialize(&self) -> Vec<u8> {
-        match self {
-            Arm64ThreadState::Arm64ThreadState64(state) => state.serialize(),
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Arm64ThreadState64 {
     pub x: [u64; 29],
     pub fp: u64,
@@ -604,6 +551,8 @@ impl Serialize for Arm64ThreadState64 {
 }
 
 impl Arm64ThreadState64 {
+    pub const SIZE: u32 = 68;
+
     pub fn parse(bytes: &[u8]) -> IResult<&[u8], Arm64ThreadState64> {
         let (bytes, x_vec) = multi::count(le_u64, 29).parse(bytes)?;
         let x: [u64; 29] = x_vec.try_into().unwrap();

@@ -1,7 +1,7 @@
 use nom::IResult;
 
 use crate::machine::{
-    CpuType, ThreadState, ThreadStateArm64Flavor, ThreadStateBase, ThreadStateX86Flavor,
+    Arm64ThreadState64, ThreadState, ThreadStateArm64Flavor, ThreadStateBase, ThreadStateX86Flavor, X86ThreadState64
 };
 
 use super::{LCLoadCommand, LoadCommandBase, Serialize};
@@ -14,13 +14,17 @@ pub struct ThreadCommand {
 }
 
 impl<'a> ThreadCommand {
-    pub fn parse(ldcmd: &'a [u8], cputype: CpuType) -> IResult<&'a [u8], Self> {
+    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
         let (mut cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let end = &ldcmd[base.cmdsize as usize..];
         let mut threads = Vec::new();
-        while cursor.as_ptr() < end.as_ptr() {
-            let (next, tsbase) = ThreadStateBase::parse(cursor, cputype)?;
-            let (next, thread) = ThreadState::parse(next, tsbase)?;
+        loop {
+            if cursor.is_empty() {
+                break;
+            }
+
+            let (next, base) = ThreadStateBase::parse(cursor)?;
+            let (next, thread) = ThreadState::parse(next, base)?;
             cursor = next;
             threads.push(thread);
         }
@@ -43,13 +47,13 @@ impl Serialize for ThreadCommand {
         buf.extend(self.cmdsize.to_le_bytes());
         for thread in &self.threads {
             match thread {
-                ThreadState::X86State(_) => {
+                ThreadState::X86State64(_) => {
                     buf.extend((ThreadStateX86Flavor::X86ThreadState64 as u32).to_le_bytes());
-                    buf.extend(1u32.to_le_bytes()); // is len always 1?
+                    buf.extend(X86ThreadState64::SIZE.to_le_bytes());
                 }
-                ThreadState::Arm64State(_) => {
+                ThreadState::Arm64State64(_) => {
                     buf.extend((ThreadStateArm64Flavor::Arm64ThreadState64 as u32).to_le_bytes());
-                    buf.extend(1u32.to_le_bytes()); // is len always 1?
+                    buf.extend(Arm64ThreadState64::SIZE.to_le_bytes());
                 }
             }
             buf.extend(thread.serialize());
@@ -64,7 +68,7 @@ mod tests {
     use super::*;
     use crate::{
         command::LCLoadCommand,
-        machine::{Arm64ThreadState, Arm64ThreadState64},
+        machine::Arm64ThreadState64,
     };
 
     #[test]
@@ -72,20 +76,20 @@ mod tests {
         let cmd = ThreadCommand {
             cmd: LCLoadCommand::LcThread,
             cmdsize: 288,
-            threads: vec![ThreadState::Arm64State(
-                Arm64ThreadState::Arm64ThreadState64(Arm64ThreadState64 {
+            threads: vec![ThreadState::Arm64State64(
+                Arm64ThreadState64 {
                     x: [1u64; 29],
                     fp: 2,
                     lr: 3,
                     sp: 4,
                     pc: 5,
                     cpsr: 6,
-                }),
+                },
             )],
         };
 
         let serialised = cmd.serialize();
-        let deserialised = ThreadCommand::parse(&serialised, CpuType::Arm64).unwrap().1;
+        let deserialised = ThreadCommand::parse(&serialised).unwrap().1;
         assert_eq!(cmd.cmd, deserialised.cmd);
     }
 }
