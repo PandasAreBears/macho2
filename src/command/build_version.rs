@@ -2,9 +2,9 @@ use nom::{number::complete::le_u32, IResult};
 use nom_derive::{Nom, Parse};
 use strum_macros::{Display, EnumString};
 
-use crate::helpers::{reverse_version_string, version_string};
+use crate::{helpers::{reverse_version_string, version_string}, macho::MachOResult};
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Nom, EnumString, Display)]
@@ -62,9 +62,7 @@ impl BuildToolVersion {
             },
         ))
     }
-}
 
-impl Serialize for BuildToolVersion {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend((self.tool as u32).to_le_bytes());
@@ -84,8 +82,8 @@ pub struct BuildVersionCommand {
     pub tools: Vec<BuildToolVersion>,
 }
 
-impl<'a> BuildVersionCommand {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl<'a> LoadCommandParser for BuildVersionCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, platform) = Platform::parse_le(cursor)?;
         let (cursor, minos) = le_u32(cursor)?;
@@ -101,8 +99,7 @@ impl<'a> BuildVersionCommand {
 
         // BuildVersionCommand is unique in that the cmdsize doesn't include the following tools linked
         // to this section.
-        Ok((
-            cursor,
+        Ok(
             BuildVersionCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -111,12 +108,10 @@ impl<'a> BuildVersionCommand {
                 sdk: version_string(sdk),
                 ntools,
                 tools,
-            },
-        ))
+            }
+        )
     }
-}
 
-impl Serialize for BuildVersionCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
@@ -128,10 +123,11 @@ impl Serialize for BuildVersionCommand {
         for tool in &self.tools {
             buf.extend(tool.serialize());
         }
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -153,7 +149,7 @@ mod tests {
         };
 
         let ser = build.serialize();
-        let (_, parsed) = BuildVersionCommand::parse(&ser).unwrap();
+        let parsed = BuildVersionCommand::parse(&ser).unwrap();
         assert_eq!(parsed, build);
     }
 }

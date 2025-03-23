@@ -1,6 +1,8 @@
-use nom::{number::complete::le_u32, IResult};
+use nom::number::complete::le_u32;
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use crate::macho::MachOResult;
+
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TwoLevelHintsCommand {
@@ -10,32 +12,29 @@ pub struct TwoLevelHintsCommand {
     pub nhints: u32,
 }
 
-impl<'a> TwoLevelHintsCommand {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for TwoLevelHintsCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, offset) = le_u32(cursor)?;
-        let (cursor, nhints) = le_u32(cursor)?;
+        let (_, nhints) = le_u32(cursor)?;
 
-        Ok((
-            cursor,
+        Ok(
             TwoLevelHintsCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
                 offset,
                 nhints,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for TwoLevelHintsCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
         buf.extend(self.cmdsize.to_le_bytes());
         buf.extend(self.offset.to_le_bytes());
         buf.extend(self.nhints.to_le_bytes());
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -53,7 +52,7 @@ mod tests {
             nhints: 0,
         };
         let buf = cmd.serialize();
-        let deserialized_cmd = TwoLevelHintsCommand::parse(&buf).unwrap().1;
+        let deserialized_cmd = TwoLevelHintsCommand::parse(&buf).unwrap();
         assert_eq!(cmd, deserialized_cmd);
     }
 }

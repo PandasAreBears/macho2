@@ -1,8 +1,8 @@
-use nom::{bytes::complete::take, number::complete::le_u32, sequence, IResult};
+use nom::{bytes::complete::take, number::complete::le_u32, sequence};
 
-use crate::helpers::string_upto_null_terminator;
+use crate::{helpers::string_upto_null_terminator, macho::MachOResult};
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct PreboundDylibCommand {
@@ -13,8 +13,8 @@ pub struct PreboundDylibCommand {
     pub linked_modules: Vec<u8>,
 }
 
-impl PreboundDylibCommand {
-    pub fn parse(ldcmd: &[u8]) -> IResult<&[u8], Self> {
+impl LoadCommandParser for PreboundDylibCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
 
         let (_, (name_offset, nmodules, linked_modules_offset)) =
@@ -23,7 +23,7 @@ impl PreboundDylibCommand {
         let (_, name) = string_upto_null_terminator(
             &ldcmd[name_offset as usize..linked_modules_offset as usize],
         )?;
-        let (cursor, linked) =
+        let (_, linked) =
             take(nmodules.div_ceil(8))(&ldcmd[linked_modules_offset as usize..])?;
 
         // One bit for each module
@@ -34,8 +34,7 @@ impl PreboundDylibCommand {
         // Fit to nmodules size
         let linked_modules = linked_modules[..nmodules as usize].to_vec();
 
-        Ok((
-            cursor,
+        Ok(
             PreboundDylibCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -43,11 +42,9 @@ impl PreboundDylibCommand {
                 nmodules,
                 linked_modules,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for PreboundDylibCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
@@ -68,7 +65,7 @@ impl Serialize for PreboundDylibCommand {
                 })
                 .collect::<Vec<u8>>(),
         );
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -91,7 +88,7 @@ mod tests {
         };
 
         let serialized = prebound.serialize();
-        let deserialized = PreboundDylibCommand::parse(&serialized).unwrap().1;
+        let deserialized = PreboundDylibCommand::parse(&serialized).unwrap();
         assert_eq!(prebound, deserialized);
     }
 }

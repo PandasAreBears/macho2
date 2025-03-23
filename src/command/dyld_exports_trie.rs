@@ -1,13 +1,10 @@
-use std::{
-    io::{Read, Seek, SeekFrom},
-    marker::PhantomData,
-};
+use std::io::{Read, Seek, SeekFrom};
 
 use nom::{error::Error, number::complete::le_u8, IResult};
 
-use crate::helpers::{read_uleb, string_upto_null_terminator};
+use crate::{helpers::{read_uleb, string_upto_null_terminator}, macho::{MachOErr, MachOResult}};
 
-use super::{linkedit_data::LinkeditDataCommand, Raw, Resolved, Serialize};
+use super::{linkedit_data::LinkeditDataCommand, pad_to_size, LoadCommandParser, LoadCommandResolver};
 
 bitflags::bitflags! {
     #[repr(transparent)]
@@ -97,52 +94,46 @@ impl DyldExport {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct DyldExportsTrie<A> {
+pub struct DyldExportsTrie {
     pub cmd: LinkeditDataCommand,
-    pub exports: Option<Vec<DyldExport>>,
-
-    phantom: PhantomData<A>,
 }
 
-impl<'a> DyldExportsTrie<Raw> {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
-        let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd)?;
-        Ok((
-            bytes,
+impl LoadCommandParser for DyldExportsTrie {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
+        let (_, cmd) = LinkeditDataCommand::parse(ldcmd)?;
+        Ok(
             DyldExportsTrie {
                 cmd,
-                exports: None,
-                phantom: PhantomData,
             },
-        ))
+        )
     }
-}
-
-impl<'a> DyldExportsTrie<Resolved> {
-    pub fn parse<T: Seek + Read>(ldcmd: &'a [u8], buf: &mut T) -> IResult<&'a [u8], Self> {
-        let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd)?;
-        let mut blob = vec![0; cmd.datasize as usize];
-        buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
-        buf.read_exact(&mut blob).unwrap();
-        let (_, exports) = DyldExport::parse(&blob).unwrap();
-        Ok((
-            bytes,
-            DyldExportsTrie {
-                cmd,
-                exports: Some(exports),
-                phantom: PhantomData,
-            },
-        ))
-    }
-}
-
-impl<T> Serialize for DyldExportsTrie<T> {
+    
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
-        self.pad_to_size(&mut buf, self.cmd.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmd.cmdsize as usize);
         buf
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct DyldExportsTrieResolved {
+    pub exports: Vec<DyldExport>,
+}
+
+impl<T: Read + Seek> LoadCommandResolver<T, DyldExportsTrieResolved> for DyldExportsTrie {
+    fn resolve(&self, buf: &mut T) -> MachOResult<DyldExportsTrieResolved> {
+        let mut blob = vec![0; self.cmd.datasize as usize];
+        buf.seek(SeekFrom::Start(self.cmd.dataoff as u64)).map_err(|e| MachOErr::IOError(e))?;
+        buf.read_exact(&mut blob).map_err(|e| MachOErr::IOError(e))?;
+        let (_, exports) = DyldExport::parse(&blob).unwrap();
+        Ok(
+            DyldExportsTrieResolved {
+                exports
+            },
+        )
+    }
+    
 }
 
 #[cfg(test)]
@@ -159,12 +150,10 @@ mod tests {
                 dataoff: 0x20,
                 datasize: 0x30,
             },
-            exports: None,
-            phantom: PhantomData,
         };
 
         let serialized = dyldtrie.serialize();
-        let deserialized = DyldExportsTrie::<Raw>::parse(&serialized).unwrap().1;
+        let deserialized = DyldExportsTrie::parse(&serialized).unwrap();
         assert_eq!(dyldtrie, deserialized);
     }
 }

@@ -1,6 +1,8 @@
-use nom::{number::complete::le_u32, IResult};
+use nom::number::complete::le_u32;
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use crate::macho::MachOResult;
+
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct SymsegCommand {
@@ -10,32 +12,29 @@ pub struct SymsegCommand {
     pub size: u32,
 }
 
-impl<'a> SymsegCommand {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for SymsegCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, offset) = le_u32(cursor)?;
-        let (cursor, size) = le_u32(cursor)?;
+        let (_, size) = le_u32(cursor)?;
 
-        Ok((
-            cursor,
+        Ok(
             SymsegCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
                 offset,
                 size,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for SymsegCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
         buf.extend(self.cmdsize.to_le_bytes());
         buf.extend(self.offset.to_le_bytes());
         buf.extend(self.size.to_le_bytes());
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -55,7 +54,7 @@ mod tests {
         };
 
         let serialized = cmd.serialize();
-        let deserialized = SymsegCommand::parse(&serialized).unwrap().1;
+        let deserialized = SymsegCommand::parse(&serialized).unwrap();
         assert_eq!(cmd, deserialized);
     }
 }

@@ -1,8 +1,8 @@
-use nom::{number::complete::le_u32, sequence, IResult};
+use nom::{number::complete::le_u32, sequence};
 
-use crate::helpers::{reverse_version_string, string_upto_null_terminator, version_string};
+use crate::{helpers::{reverse_version_string, string_upto_null_terminator, version_string}, macho::MachOResult};
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DylibCommand {
@@ -14,17 +14,16 @@ pub struct DylibCommand {
     pub compatibility_version: String,
 }
 
-impl<'a> DylibCommand {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for DylibCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
 
         let (_, (name_offset, timestamp, current_version, compatibility_version)) =
             sequence::tuple((le_u32, le_u32, le_u32, le_u32))(cursor)?;
 
-        let (cursor, name) = string_upto_null_terminator(&ldcmd[name_offset as usize..])?;
+        let (_, name) = string_upto_null_terminator(&ldcmd[name_offset as usize..])?;
 
-        Ok((
-            cursor,
+        Ok(
             DylibCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -33,11 +32,9 @@ impl<'a> DylibCommand {
                 current_version: version_string(current_version),
                 compatibility_version: version_string(compatibility_version),
             },
-        ))
+        )
     }
-}
 
-impl Serialize for DylibCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
@@ -48,7 +45,7 @@ impl Serialize for DylibCommand {
         buf.extend(reverse_version_string(self.compatibility_version.clone()).to_le_bytes());
         buf.extend(self.name.as_bytes());
         buf.push(0);
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -70,7 +67,7 @@ mod tests {
         };
 
         let serialized = cmd.serialize();
-        let deserialized = DylibCommand::parse(&serialized).unwrap().1;
+        let deserialized = DylibCommand::parse(&serialized).unwrap();
         assert_eq!(cmd, deserialized);
     }
 }

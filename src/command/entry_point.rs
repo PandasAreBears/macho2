@@ -1,6 +1,8 @@
-use nom::{number::complete::le_u64, IResult};
+use nom::number::complete::le_u64;
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use crate::macho::MachOResult;
+
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct EntryPointCommand {
@@ -10,32 +12,29 @@ pub struct EntryPointCommand {
     pub stacksize: u64,
 }
 
-impl<'a> EntryPointCommand {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for EntryPointCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, entryoff) = le_u64(cursor)?;
-        let (cursor, stacksize) = le_u64(cursor)?;
+        let (_, stacksize) = le_u64(cursor)?;
 
-        Ok((
-            cursor,
+        Ok(
             EntryPointCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
                 entryoff,
                 stacksize,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for EntryPointCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
         buf.extend(self.cmdsize.to_le_bytes());
         buf.extend(self.entryoff.to_le_bytes());
         buf.extend(self.stacksize.to_le_bytes());
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -55,7 +54,7 @@ mod tests {
         };
 
         let serialized = cmd.serialize();
-        let deserialized = EntryPointCommand::parse(&serialized).unwrap().1;
+        let deserialized = EntryPointCommand::parse(&serialized).unwrap();
         assert_eq!(cmd, deserialized);
     }
 }

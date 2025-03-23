@@ -1,6 +1,8 @@
-use nom::{number::complete::le_u64, IResult};
+use nom::number::complete::le_u64;
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use crate::macho::MachOResult;
+
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct SourceVersionCommand {
@@ -9,10 +11,10 @@ pub struct SourceVersionCommand {
     pub version: String, // A.B.C.D.E packed as a24.b10.c10.d10.e10
 }
 
-impl<'a> SourceVersionCommand {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for SourceVersionCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
-        let (cursor, version) = le_u64(cursor)?;
+        let (_, version) = le_u64(cursor)?;
 
         let a = (version >> 40) as u32;
         let b = ((version >> 30) & 0x3ff) as u32;
@@ -22,18 +24,15 @@ impl<'a> SourceVersionCommand {
 
         let version_str = format!("{}.{}.{}.{}.{}", a, b, c, d, e);
 
-        Ok((
-            cursor,
+        Ok(
             SourceVersionCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
                 version: version_str,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for SourceVersionCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
@@ -53,7 +52,7 @@ impl Serialize for SourceVersionCommand {
             | e as u64;
 
         buf.extend(version.to_le_bytes());
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -72,7 +71,7 @@ mod tests {
         };
 
         let serialized = cmd.serialize();
-        let deserialized = SourceVersionCommand::parse(&serialized).unwrap().1;
+        let deserialized = SourceVersionCommand::parse(&serialized).unwrap();
         assert_eq!(cmd, deserialized);
     }
 }

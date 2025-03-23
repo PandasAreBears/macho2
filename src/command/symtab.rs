@@ -1,7 +1,4 @@
-use std::{
-    io::{Read, Seek},
-    marker::PhantomData,
-};
+use std::io::{Read, Seek};
 
 use nom::{
     error::{self, Error, ErrorKind},
@@ -12,9 +9,9 @@ use nom::{
 };
 use num_derive::FromPrimitive;
 
-use crate::helpers::string_upto_null_terminator;
+use crate::{helpers::string_upto_null_terminator, macho::MachOResult};
 
-use super::{LCLoadCommand, LoadCommandBase, Raw, Resolved, Serialize};
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser, LoadCommandResolver}; 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
 pub enum NlistTypeType {
@@ -164,25 +161,21 @@ impl Nlist64 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SymtabCommand<A> {
+pub struct SymtabCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
     pub symoff: u32,
     pub nsyms: u32,
     pub stroff: u32,
     pub strsize: u32,
-    pub symbols: Option<Vec<Nlist64>>,
-
-    phantom: PhantomData<A>,
 }
 
-impl<'a> SymtabCommand<Raw> {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for SymtabCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
-        let (cursor, (symoff, nsyms, stroff, strsize)) =
+        let (_, (symoff, nsyms, stroff, strsize)) =
             sequence::tuple((le_u32, le_u32, le_u32, le_u32))(cursor)?;
-        Ok((
-            cursor,
+        Ok(
             SymtabCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -190,28 +183,39 @@ impl<'a> SymtabCommand<Raw> {
                 nsyms,
                 stroff,
                 strsize,
-                symbols: None,
-                phantom: PhantomData,
             },
-        ))
+        )
+    }
+
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+        buf.extend(self.symoff.to_le_bytes());
+        buf.extend(self.nsyms.to_le_bytes());
+        buf.extend(self.stroff.to_le_bytes());
+        buf.extend(self.strsize.to_le_bytes());
+        pad_to_size(&mut buf, self.cmdsize as usize);
+        buf
     }
 }
 
-impl<'a> SymtabCommand<Resolved> {
-    pub fn parse<T: Seek + Read>(ldcmd: &'a [u8], buf: &mut T) -> IResult<&'a [u8], Self> {
-        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
-        let (cursor, (symoff, nsyms, stroff, strsize)) =
-            sequence::tuple((le_u32, le_u32, le_u32, le_u32))(cursor)?;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymtabCommandResolved {
+    pub symbols: Vec<Nlist64>,
+}
 
-        let mut string_pool = vec![0u8; strsize as usize];
-        buf.seek(std::io::SeekFrom::Start(stroff as u64)).unwrap();
-        buf.read_exact(&mut string_pool).unwrap();
+impl<T: Read + Seek> LoadCommandResolver<T, SymtabCommandResolved> for SymtabCommand {
+    fn resolve(&self, buf: &mut T) -> MachOResult<SymtabCommandResolved> {
+        let mut string_pool = vec![0u8; self.strsize as usize];
+        buf.seek(std::io::SeekFrom::Start(self.stroff as u64)).map_err(|e| crate::macho::MachOErr::IOError(e))?;
+        buf.read_exact(&mut string_pool).map_err(|e| crate::macho::MachOErr::IOError(e))?;
 
-        let mut sym_offs = vec![0u8; nsyms as usize * Nlist64::SIZE as usize];
-        buf.seek(std::io::SeekFrom::Start(symoff as u64)).unwrap();
-        buf.read_exact(&mut sym_offs).unwrap();
+        let mut sym_offs = vec![0u8; self.nsyms as usize * Nlist64::SIZE as usize];
+        buf.seek(std::io::SeekFrom::Start(self.symoff as u64)).map_err(|e| crate::macho::MachOErr::IOError(e))?;
+        buf.read_exact(&mut sym_offs).map_err(|e| crate::macho::MachOErr::IOError(e))?;
 
-        let symbols = (0..nsyms)
+        let symbols = (0..self.nsyms)
             .map(|i| {
                 let (_, symbol) = Nlist64::parse(
                     &sym_offs[i as usize * Nlist64::SIZE as usize..],
@@ -222,34 +226,13 @@ impl<'a> SymtabCommand<Resolved> {
             })
             .collect();
 
-        Ok((
-            cursor,
-            SymtabCommand {
-                cmd: base.cmd,
-                cmdsize: base.cmdsize,
-                symoff,
-                nsyms,
-                stroff,
-                strsize,
-                symbols: Some(symbols),
-                phantom: PhantomData,
+        Ok(
+            SymtabCommandResolved {
+                symbols
             },
-        ))
+        )
     }
-}
 
-impl<T> Serialize for SymtabCommand<T> {
-    fn serialize(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
-        buf.extend(self.cmd.serialize());
-        buf.extend(self.cmdsize.to_le_bytes());
-        buf.extend(self.symoff.to_le_bytes());
-        buf.extend(self.nsyms.to_le_bytes());
-        buf.extend(self.stroff.to_le_bytes());
-        buf.extend(self.strsize.to_le_bytes());
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
-        buf
-    }
 }
 
 #[cfg(test)]
@@ -258,19 +241,17 @@ mod tests {
 
     #[test]
     fn test_symtab_serialize() {
-        let symtab = SymtabCommand::<Raw> {
+        let symtab = SymtabCommand {
             cmd: LCLoadCommand::LcSymtab,
             cmdsize: 24,
             symoff: 0,
             nsyms: 0,
             stroff: 0,
             strsize: 0,
-            symbols: None,
-            phantom: PhantomData,
         };
 
         let serialized = symtab.serialize();
-        let deserialized = SymtabCommand::<Raw>::parse(&serialized).unwrap().1;
+        let deserialized = SymtabCommand::parse(&serialized).unwrap();
         assert_eq!(symtab, deserialized);
     }
 }

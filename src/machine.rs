@@ -9,8 +9,6 @@ use nom::{
 use num_derive::FromPrimitive;
 use strum_macros::Display;
 
-use crate::command::Serialize;
-
 #[repr(usize)]
 #[derive(Debug, Copy, Clone, FromPrimitive)]
 pub enum CpuABI {
@@ -117,10 +115,8 @@ impl CpuSubType {
             _ => Ok((bytes, CpuSubType::None)),
         }
     }
-}
 
-impl Serialize for CpuSubType {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         match self {
             CpuSubType::CpuSubTypeI386(cpusubtype) => cpusubtype.serialize(),
             CpuSubType::CpuSubTypeX86(cpusubtype) => cpusubtype.serialize(),
@@ -170,10 +166,8 @@ impl CpuSubTypeI386 {
             None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
-}
 
-impl Serialize for CpuSubTypeI386 {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let cpusubtype = *self as u32;
         cpusubtype.to_le_bytes().to_vec()
     }
@@ -202,10 +196,8 @@ impl CpuSubTypeX86 {
             None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
-}
 
-impl Serialize for CpuSubTypeX86 {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let cpusubtype = *self as u32;
         cpusubtype.to_le_bytes().to_vec()
     }
@@ -245,10 +237,8 @@ impl CpuSubTypeArm {
             None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
-}
 
-impl Serialize for CpuSubTypeArm {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let cpusubtype = *self as u32;
         cpusubtype.to_le_bytes().to_vec()
     }
@@ -279,10 +269,8 @@ impl CpuSubTypeArm64 {
             None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
-}
 
-impl Serialize for CpuSubTypeArm64 {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let cpusubtype = *self as u32;
         cpusubtype.to_le_bytes().to_vec()
     }
@@ -302,10 +290,8 @@ impl ThreadStateFlavor {
             None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
-}
 
-impl Serialize for ThreadStateFlavor {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let flavor = *self as u32;
         flavor.to_le_bytes().to_vec()
     }
@@ -330,10 +316,8 @@ impl ThreadState {
             }
         }
     }
-}
 
-impl Serialize for ThreadState {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         match self {
             ThreadState::X86State64(state) => state.serialize(),
             ThreadState::Arm64State64(state) => state.serialize(),
@@ -353,10 +337,8 @@ impl ThreadStateBase {
 
         Ok((bytes, ThreadStateBase { flavor, size }))
     }
-}
 
-impl Serialize for ThreadStateBase {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.flavor.serialize());
         buf.extend(self.size.to_le_bytes());
@@ -377,15 +359,12 @@ impl ThreadStateX86Flavor {
             None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
-}
 
-impl Serialize for ThreadStateX86Flavor {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let flavor = *self as u32;
         flavor.to_le_bytes().to_vec()
     }
 }
-
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct X86ThreadState64 {
@@ -473,10 +452,8 @@ impl X86ThreadState64 {
             },
         ))
     }
-}
 
-impl Serialize for X86ThreadState64 {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.rax.to_le_bytes());
         buf.extend(self.rbx.to_le_bytes());
@@ -516,10 +493,8 @@ impl ThreadStateArm64Flavor {
             None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
         }
     }
-}
 
-impl Serialize for ThreadStateArm64Flavor {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let flavor = *self as u32;
         flavor.to_le_bytes().to_vec()
     }
@@ -533,21 +508,6 @@ pub struct Arm64ThreadState64 {
     pub sp: u64,
     pub pc: u64,
     pub cpsr: u64,
-}
-
-impl Serialize for Arm64ThreadState64 {
-    fn serialize(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
-        for x in self.x.iter() {
-            buf.extend(x.to_le_bytes());
-        }
-        buf.extend(self.fp.to_le_bytes());
-        buf.extend(self.lr.to_le_bytes());
-        buf.extend(self.sp.to_le_bytes());
-        buf.extend(self.pc.to_le_bytes());
-        buf.extend(self.cpsr.to_le_bytes());
-        buf
-    }
 }
 
 impl Arm64ThreadState64 {
@@ -573,5 +533,18 @@ impl Arm64ThreadState64 {
                 cpsr,
             },
         ))
+    }
+
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        for x in self.x.iter() {
+            buf.extend(x.to_le_bytes());
+        }
+        buf.extend(self.fp.to_le_bytes());
+        buf.extend(self.lr.to_le_bytes());
+        buf.extend(self.sp.to_le_bytes());
+        buf.extend(self.pc.to_le_bytes());
+        buf.extend(self.cpsr.to_le_bytes());
+        buf
     }
 }

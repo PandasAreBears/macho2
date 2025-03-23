@@ -1,6 +1,8 @@
 use nom::{number::complete::le_u32, sequence, IResult};
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use crate::macho::MachOResult;
+
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 bitflags::bitflags! {
     #[repr(transparent)]
@@ -32,16 +34,15 @@ pub struct DylibUseCommand {
     pub flags: DylibUseFlags,
 }
 
-impl DylibUseCommand {
-    pub fn parse<'a>(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for DylibUseCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
 
         let (cursor, (nameoff, marker, current_version, compat_version)) =
             sequence::tuple((le_u32, le_u32, le_u32, le_u32))(cursor)?;
-        let (cursor, flags) = DylibUseFlags::parse(cursor)?;
+        let (_, flags) = DylibUseFlags::parse(cursor)?;
 
-        Ok((
-            cursor,
+        Ok(
             DylibUseCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -51,11 +52,9 @@ impl DylibUseCommand {
                 compat_version,
                 flags,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for DylibUseCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
@@ -65,7 +64,7 @@ impl Serialize for DylibUseCommand {
         buf.extend(self.current_version.to_le_bytes());
         buf.extend(self.compat_version.to_le_bytes());
         buf.extend(self.flags.bits().to_le_bytes());
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -88,7 +87,7 @@ mod tests {
         };
 
         let serialized = cmd.serialize();
-        let deserialized = DylibUseCommand::parse(&serialized).unwrap().1;
+        let deserialized = DylibUseCommand::parse(&serialized).unwrap();
         assert_eq!(cmd, deserialized);
     }
 }

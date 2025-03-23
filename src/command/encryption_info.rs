@@ -1,6 +1,8 @@
-use nom::{number::complete::le_u32, IResult};
+use nom::number::complete::le_u32;
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use crate::macho::MachOResult;
+
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct EncryptionInfoCommand {
@@ -11,15 +13,14 @@ pub struct EncryptionInfoCommand {
     pub cryptid: u32,
 }
 
-impl<'a> EncryptionInfoCommand {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for EncryptionInfoCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, cryptoff) = le_u32(cursor)?;
         let (cursor, cryptsize) = le_u32(cursor)?;
-        let (cursor, cryptid) = le_u32(cursor)?;
+        let (_, cryptid) = le_u32(cursor)?;
 
-        Ok((
-            cursor,
+        Ok(
             EncryptionInfoCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -27,11 +28,9 @@ impl<'a> EncryptionInfoCommand {
                 cryptsize,
                 cryptid,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for EncryptionInfoCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
@@ -53,16 +52,15 @@ pub struct EncryptionInfoCommand64 {
     pub pad: u32,
 }
 
-impl<'a> EncryptionInfoCommand64 {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for EncryptionInfoCommand64 {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, cryptoff) = le_u32(cursor)?;
         let (cursor, cryptsize) = le_u32(cursor)?;
         let (cursor, cryptid) = le_u32(cursor)?;
-        let (cursor, pad) = le_u32(cursor)?;
+        let (_, pad) = le_u32(cursor)?;
 
-        Ok((
-            cursor,
+        Ok(
             EncryptionInfoCommand64 {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -71,11 +69,9 @@ impl<'a> EncryptionInfoCommand64 {
                 cryptid,
                 pad,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for EncryptionInfoCommand64 {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
@@ -84,7 +80,7 @@ impl Serialize for EncryptionInfoCommand64 {
         buf.extend(self.cryptsize.to_le_bytes());
         buf.extend(self.cryptid.to_le_bytes());
         buf.extend(self.pad.to_le_bytes());
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -105,7 +101,7 @@ mod tests {
         };
 
         let serialized = cmd.serialize();
-        let deserialized = EncryptionInfoCommand::parse(&serialized).unwrap().1;
+        let deserialized = EncryptionInfoCommand::parse(&serialized).unwrap();
         assert_eq!(cmd, deserialized);
     }
 
@@ -121,7 +117,7 @@ mod tests {
         };
 
         let serialized = cmd.serialize();
-        let deserialized = EncryptionInfoCommand64::parse(&serialized).unwrap().1;
+        let deserialized = EncryptionInfoCommand64::parse(&serialized).unwrap();
         assert_eq!(cmd, deserialized);
     }
 }

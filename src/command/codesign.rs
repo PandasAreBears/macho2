@@ -1,7 +1,4 @@
-use std::{
-    io::{Read, Seek, SeekFrom},
-    marker::PhantomData,
-};
+use std::io::{Read, Seek, SeekFrom};
 
 use bitflags;
 use nom::{
@@ -16,11 +13,10 @@ use num_derive::FromPrimitive;
 
 use crate::{
     command::linkedit_data::LinkeditDataCommand,
-    command::{Raw, Resolved},
-    helpers::string_upto_null_terminator,
+    helpers::string_upto_null_terminator, macho::{MachOErr, MachOResult},
 };
 
-use super::Serialize;
+use super::{pad_to_size, LoadCommandParser, LoadCommandResolver};
 
 bitflags::bitflags! {
     #[repr(transparent)]
@@ -482,33 +478,38 @@ pub enum CodeSignBlob {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct CodeSignCommand<A> {
+pub struct CodeSignCommand {
     pub cmd: LinkeditDataCommand,
-    pub blobs: Option<Vec<CodeSignBlob>>,
-    phantom: PhantomData<A>,
 }
 
-impl<'a> CodeSignCommand<Raw> {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
-        let (cursor, cmd) = LinkeditDataCommand::parse(ldcmd)?;
+impl<'a> LoadCommandParser for CodeSignCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
+        let (_, cmd) = LinkeditDataCommand::parse(ldcmd)?;
 
-        Ok((
-            cursor,
+        Ok(
             CodeSignCommand {
                 cmd,
-                blobs: None,
-                phantom: PhantomData,
             },
-        ))
+        )
+    }
+
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        pad_to_size(&mut buf, self.cmd.cmdsize as usize);
+        buf
     }
 }
 
-impl<'a> CodeSignCommand<Resolved> {
-    pub fn parse<T: Seek + Read>(ldcmd: &'a [u8], buf: &mut T) -> IResult<&'a [u8], Self> {
-        let (bytes, cmd) = LinkeditDataCommand::parse(ldcmd)?;
-        let mut cs = vec![0u8; cmd.datasize as usize];
-        buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
-        buf.read_exact(&mut cs).unwrap();
+pub struct CodeSignCommandResolved {
+    pub blobs: Vec<CodeSignBlob>,
+}
+
+impl<T: Read + Seek> LoadCommandResolver<T, CodeSignCommandResolved> for CodeSignCommand {
+    fn resolve(&self, buf: &mut T) -> MachOResult<CodeSignCommandResolved> {
+        let mut cs = vec![0u8; self.cmd.datasize as usize];
+        buf.seek(SeekFrom::Start(self.cmd.dataoff as u64)).map_err(|e| MachOErr::IOError(e))?;
+        buf.read_exact(&mut cs).map_err(|e| MachOErr::IOError(e))?;
 
         let (_, super_blob) = CodeSignSuperBlob::parse(&cs).unwrap();
 
@@ -541,25 +542,14 @@ impl<'a> CodeSignCommand<Resolved> {
             })
             .collect();
 
-        Ok((
-            bytes,
-            CodeSignCommand {
-                cmd,
-                blobs: Some(blobs),
-                phantom: PhantomData,
+        Ok(
+            CodeSignCommandResolved {
+                blobs,
             },
-        ))
+        )
     }
 }
 
-impl<T> Serialize for CodeSignCommand<T> {
-    fn serialize(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
-        buf.extend(self.cmd.serialize());
-        self.pad_to_size(&mut buf, self.cmd.cmdsize as usize);
-        buf
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -575,12 +565,10 @@ mod tests {
                 dataoff: 0,
                 datasize: 0,
             },
-            blobs: None,
-            phantom: PhantomData,
         };
 
         let serialized = cmd.serialize();
-        let deserialized = CodeSignCommand::<Raw>::parse(&serialized).unwrap().1;
+        let deserialized = CodeSignCommand::parse(&serialized).unwrap();
         assert_eq!(cmd, deserialized);
     }
 }

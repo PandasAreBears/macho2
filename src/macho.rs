@@ -1,11 +1,16 @@
 use std::error;
 use std::io::{Read, Seek, SeekFrom};
-use std::marker::PhantomData;
 use std::num::NonZeroU64;
 
-use crate::command::dyld_chained_fixup::DyldFixup;
+use crate::command::codesign::CodeSignCommandResolved;
+use crate::command::dyld_chained_fixup::DyldChainedFixupCommandResolved;
+use crate::command::dyld_exports_trie::DyldExportsTrieResolved;
+use crate::command::dyld_info::DyldInfoCommandResolved;
+use crate::command::dysymtab::DysymtabCommandResolved;
+use crate::command::function_starts::FunctionStartsCommandResolved;
 use crate::command::segment::SegmentCommand64;
-use crate::command::{LoadCommand, Raw, Resolved, Serialize};
+use crate::command::symtab::SymtabCommandResolved;
+use crate::command::{LoadCommand, LoadCommandResolver};
 use crate::fat::{FatArch, FatHeader, FatMagic};
 use crate::file_subset::FileSubset;
 use crate::header::{MHMagic, MachHeader};
@@ -19,7 +24,15 @@ pub enum MachOErr {
     MagicError,
     InvalidValue(String), 
     ParsingError(String), 
+    NomError,
     GenericError(String), 
+    UnknownLoadCommand
+}
+
+impl From<nom::Err<nom::error::Error<&[u8]>>> for MachOErr {
+    fn from(_: nom::Err<nom::error::Error<&[u8]>>) -> Self {
+        MachOErr::NomError
+    }
 }
 
 impl fmt::Display for MachOErr {
@@ -30,6 +43,7 @@ impl fmt::Display for MachOErr {
 impl error::Error for MachOErr {}
 
 pub type MachOResult<T> = Result<T, MachOErr>;
+
 
 #[derive(Debug, Clone)]
 pub enum ImageValue {
@@ -50,42 +64,17 @@ impl ImageValue {
 
 #[allow(dead_code)]
 #[derive(Debug)]
-pub struct MachO<T: Seek + Read, A> {
+pub struct MachO<T: Seek + Read> {
     pub header: MachHeader,
     pub buf: T,
-    pub load_commands: Vec<LoadCommand<A>>,
+    pub load_commands: Vec<LoadCommand>,
     segs: Vec<SegmentCommand64>,
-    phantom: PhantomData<A>,
 }
 
-impl<T: Seek + Read> MachO<T, Raw> {
+impl<T: Seek + Read> MachO<T> {
     pub fn parse(mut buf: T) -> MachOResult<Self> {
         let header = MachHeader::parse(&mut buf)?;
-        let load_commands = LoadCommand::<Raw>::parse_all(&mut buf, header)?;
-
-        let segs: Vec<SegmentCommand64> = load_commands
-            .iter()
-            .filter_map(|lc| match lc {
-                LoadCommand::Segment64(cmd) => Some(cmd),
-                _ => None,
-            })
-            .cloned()
-            .collect();
-
-        Ok(Self {
-            header,
-            buf,
-            load_commands,
-            segs,
-            phantom: PhantomData,
-        })
-    }
-}
-
-impl<T: Seek + Read> MachO<T, Resolved> {
-    pub fn parse(mut buf: T) -> MachOResult<Self> {
-        let header = MachHeader::parse(&mut buf)?;
-        let load_commands = LoadCommand::<Resolved>::parse_all(&mut buf, header)?;
+        let load_commands = LoadCommand::parse_all(&mut buf, header)?;
 
         let segs: Vec<SegmentCommand64> = load_commands
             .iter()
@@ -101,7 +90,6 @@ impl<T: Seek + Read> MachO<T, Resolved> {
             load_commands,
             buf,
             segs,
-            phantom: PhantomData,
         })
     }
 
@@ -110,40 +98,41 @@ impl<T: Seek + Read> MachO<T, Resolved> {
             return Err(MachOErr::InvalidValue(format!("Invalid offset: 0x{:x}", offset)));
         }
 
-        // When the offset is a dyld fixup, it can be 1. a rebase, which is easy
-        // to satisfy by adding the base VM address, or 2. a bind, which is less obvious
-        // what to do here.
-        let dyldfixup: Vec<&DyldFixup> = self
+        // TODO: cache this
+        let fixups = self
             .load_commands
             .iter()
             .filter_map(|lc| match lc {
-                LoadCommand::DyldChainedFixups(cmd) => {
-                    if let Some(fixups) = &cmd.fixups {
-                        fixups.iter().find(|fixup| fixup.offset == offset)
-                    } else {
-                        None
-                    }
-                }
+                LoadCommand::DyldChainedFixups(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
                 _ => None,
             })
-            .collect();
+            .collect::<Vec<DyldChainedFixupCommandResolved>>();
 
-        if !dyldfixup.is_empty() {
-            let fixup = dyldfixup[0];
-            if fixup.fixup.clone().is_rebase() {
-                return Ok(ImageValue::Rebase(
-                    fixup
-                        .fixup
-                        .clone()
-                        .rebase_base_vm_addr(&self.load_commands)
-                        .unwrap(),
-                ));
-            } else {
-                return Ok(ImageValue::Bind(
-                    fixup.fixup.clone().bind_symbol_name().unwrap(),
-                ));
+        if !fixups.is_empty() {
+            // When the offset is a dyld fixup, it can be 1. a rebase, which is easy
+            // to satisfy by adding the base VM address, or 2. a bind, which is less obvious
+            // what to do here.
+            let dyldfixup = fixups[0].fixups.iter().find(|fixup| fixup.offset == offset);
+
+            if !dyldfixup.is_none() {
+                let dyldfixup = dyldfixup.unwrap();
+                if dyldfixup.fixup.clone().is_rebase() {
+                    return Ok(ImageValue::Rebase(
+                        dyldfixup
+                            .fixup
+                            .clone()
+                            .rebase_base_vm_addr(&self.load_commands)
+                            .unwrap(),
+                    ));
+                } else {
+                    return Ok(ImageValue::Bind(
+                        dyldfixup.fixup.clone().bind_symbol_name().unwrap(),
+                    ));
+                }
             }
+
         }
+
 
         let mut value = [0u8; 8];
         self.buf.seek(SeekFrom::Start(offset)).map_err(|e| MachOErr::IOError(e))?;
@@ -171,9 +160,7 @@ impl<T: Seek + Read> MachO<T, Resolved> {
         let offset = self.vm_addr_to_offset(vm_addr)?;
         self.read_offset_u32(offset)
     }
-}
 
-impl<T: Seek + Read, A> MachO<T, A> {
     pub fn is_macho_magic(buf: &mut T) -> MachOResult<bool> {
         let mut magic: [u8; 4] = [0; 4];
         buf.seek(SeekFrom::Start(0)).map_err(|e| MachOErr::IOError(e))?;
@@ -239,16 +226,88 @@ impl<T: Seek + Read, A> MachO<T, A> {
         }
         bytes
     }
+
+    pub fn resolve_dyldinfo(&mut self) -> Option<DyldInfoCommandResolved> {
+        self.load_commands
+            .iter()
+            .find_map(|lc| match lc {
+                LoadCommand::DyldInfo(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
+                _ => None,
+            })
+    }
+
+    pub fn resolve_dyldinfoonly(&mut self) -> Option<DyldInfoCommandResolved> {
+        self.load_commands
+            .iter()
+            .find_map(|lc| match lc {
+                LoadCommand::DyldInfoOnly(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
+                _ => None,
+            })
+    }
+
+    pub fn resolve_dyldexportstrie(&mut self) -> Option<DyldExportsTrieResolved> {
+        self.load_commands
+            .iter()
+            .find_map(|lc| match lc {
+                LoadCommand::DyldExportsTrie(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
+                _ => None,
+            })
+    }
+
+    pub fn resolve_codesign(&mut self) -> Option<CodeSignCommandResolved> {
+        self.load_commands
+            .iter()
+            .find_map(|lc| match lc {
+                LoadCommand::CodeSignature(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
+                _ => None,
+            })
+    }
+
+    pub fn resolve_dysymtab(&mut self) -> Option<DysymtabCommandResolved> {
+        let symtab = self.resolve_symtab().unwrap();
+        self.load_commands
+            .iter()
+            .find_map(|lc| match lc {
+                LoadCommand::Dysymtab(cmd) => Some(cmd.resolve(&mut self.buf, symtab.clone()).unwrap()),
+                _ => None,
+            })
+    }
+
+    pub fn resolve_symtab(&mut self) -> Option<SymtabCommandResolved> {
+        self.load_commands
+            .iter()
+            .find_map(|lc| match lc {
+                LoadCommand::Symtab(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
+                _ => None,
+            })
+    }
+
+    pub fn resolve_functionstarts(&mut self) -> Option<FunctionStartsCommandResolved> {
+        self.load_commands
+            .iter()
+            .find_map(|lc| match lc {
+                LoadCommand::FunctionStarts(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
+                _ => None,
+            })
+    }
+
+    pub fn resolve_fixups(&mut self) -> Option<DyldChainedFixupCommandResolved> {
+        self.load_commands
+            .iter()
+            .find_map(|lc| match lc {
+                LoadCommand::DyldChainedFixups(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
+                _ => None,
+            })
+    }
 }
 
-pub struct FatMachO<'a, T: Seek + Read, A> {
+pub struct FatMachO<'a, T: Seek + Read> {
     pub header: FatHeader,
     pub archs: Vec<FatArch>,
     buf: &'a mut T,
-    phantom: PhantomData<A>,
 }
 
-impl<'a, T: Seek + Read, A> FatMachO<'a, T, A> {
+impl<'a, T: Seek + Read> FatMachO<'a, T> {
     pub fn is_fat_magic(buf: &'a mut T) -> MachOResult<bool> {
         let mut magic = [0; 4];
         buf.seek(SeekFrom::Start(0)).map_err(|e| MachOErr::IOError(e))?;
@@ -274,16 +333,13 @@ impl<'a, T: Seek + Read, A> FatMachO<'a, T, A> {
             header,
             archs,
             buf,
-            phantom: PhantomData,
         })
     }
-}
 
-impl<'a, T: Seek + Read> FatMachO<'a, T, Resolved> {
-    pub fn macho<A>(
+    pub fn macho(
         &'a mut self,
         cputype: machine::CpuType,
-    ) -> MachOResult<MachO<FileSubset<'a, T>, Resolved>> {
+    ) -> MachOResult<MachO<FileSubset<'a, T>>> {
         let arch = self
             .archs
             .iter()
@@ -294,33 +350,10 @@ impl<'a, T: Seek + Read> FatMachO<'a, T, Resolved> {
 
         let mut partial = FileSubset::new(self.buf, offset, size).map_err(|_| MachOErr::InvalidValue("Unable to create subset".to_string()))?;
 
-        if !MachO::<_, A>::is_macho_magic(&mut partial)? {
+        if !MachO::<_>::is_macho_magic(&mut partial)? {
             return Err(MachOErr::InvalidValue("Fat MachO slice is not a MachO".to_string()));
         }
 
-        MachO::<_, Resolved>::parse(partial)
-    }
-}
-
-impl<'a, T: Seek + Read> FatMachO<'a, T, Raw> {
-    pub fn macho<A>(
-        &'a mut self,
-        cputype: machine::CpuType,
-    ) -> MachOResult<MachO<FileSubset<'a, T>, Raw>> {
-        let arch = self
-            .archs
-            .iter()
-            .find(|arch| arch.cputype() == cputype)
-            .ok_or(MachOErr::InvalidValue(format!("CPU type {:?} not found in fat binary", cputype)))?;
-        let offset = arch.offset();
-        let size = arch.size();
-
-        let mut partial = FileSubset::new(self.buf, offset, size).map_err(|_| MachOErr::InvalidValue("Unable to create subset".to_string()))?;
-
-        if !MachO::<_, A>::is_macho_magic(&mut partial)? {
-            return Err(MachOErr::InvalidValue("Fat MachO slice is not a MachO".to_string()));
-        }
-
-        MachO::<_, Raw>::parse(partial)
+        MachO::<_>::parse(partial)
     }
 }

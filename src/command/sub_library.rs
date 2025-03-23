@@ -1,8 +1,8 @@
-use nom::{number::complete::le_u32, IResult};
+use nom::number::complete::le_u32;
 
-use crate::helpers::string_upto_null_terminator;
+use crate::{helpers::string_upto_null_terminator, macho::MachOResult};
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct SubLibraryCommand {
@@ -11,26 +11,23 @@ pub struct SubLibraryCommand {
     pub sub_library: String,
 }
 
-impl<'a> SubLibraryCommand {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for SubLibraryCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
 
         let (_, sub_library_offset) = le_u32(cursor)?;
-        let (cursor, sub_library) =
+        let (_, sub_library) =
             string_upto_null_terminator(&ldcmd[sub_library_offset as usize..])?;
 
-        Ok((
-            cursor,
+        Ok(
             SubLibraryCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
                 sub_library,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for SubLibraryCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
@@ -38,7 +35,7 @@ impl Serialize for SubLibraryCommand {
         buf.extend((0xC as u32).to_le_bytes()); // sub_library offset
         buf.extend(self.sub_library.as_bytes());
         buf.push(0);
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -57,7 +54,7 @@ mod tests {
         };
 
         let serialized = cmd.serialize();
-        let deserialized = SubLibraryCommand::parse(&serialized).unwrap().1;
+        let deserialized = SubLibraryCommand::parse(&serialized).unwrap();
         assert_eq!(cmd, deserialized);
     }
 }

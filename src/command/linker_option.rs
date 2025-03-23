@@ -1,8 +1,8 @@
-use nom::{number::complete::le_u32, IResult};
+use nom::number::complete::le_u32;
 
-use crate::helpers::string_upto_null_terminator;
+use crate::{helpers::string_upto_null_terminator, macho::MachOResult};
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct LinkerOptionCommand {
@@ -14,8 +14,8 @@ pub struct LinkerOptionCommand {
     pub strings: Vec<String>,
 }
 
-impl<'a> LinkerOptionCommand {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for LinkerOptionCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(&ldcmd)?;
         let (mut cursor, count) = le_u32(cursor)?;
 
@@ -26,19 +26,16 @@ impl<'a> LinkerOptionCommand {
             cursor = next;
         }
 
-        Ok((
-            cursor,
+        Ok(
             LinkerOptionCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
                 count,
                 strings,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for LinkerOptionCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
@@ -48,7 +45,7 @@ impl Serialize for LinkerOptionCommand {
             buf.extend(string.as_bytes());
             buf.push(0);
         }
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -68,7 +65,7 @@ mod tests {
         };
 
         let serialized = cmd.serialize();
-        let deserialized = LinkerOptionCommand::parse(&serialized).unwrap().1;
+        let deserialized = LinkerOptionCommand::parse(&serialized).unwrap();
         assert_eq!(cmd, deserialized);
     }
 }

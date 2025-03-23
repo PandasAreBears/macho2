@@ -1,6 +1,8 @@
-use nom::{number::complete::le_u32, IResult};
+use nom::number::complete::le_u32;
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use crate::macho::MachOResult;
+
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct PrebindCksumCommand {
@@ -9,29 +11,26 @@ pub struct PrebindCksumCommand {
     pub cksum: u32,
 }
 
-impl<'a> PrebindCksumCommand {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for PrebindCksumCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
-        let (cursor, cksum) = le_u32(cursor)?;
+        let (_, cksum) = le_u32(cursor)?;
 
-        Ok((
-            cursor,
+        Ok(
             PrebindCksumCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
                 cksum,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for PrebindCksumCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
         buf.extend(self.cmdsize.to_le_bytes());
         buf.extend(self.cksum.to_le_bytes());
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -50,7 +49,7 @@ mod tests {
         };
 
         let serialized = cmd.serialize();
-        let deserialized = PrebindCksumCommand::parse(&serialized).unwrap().1;
+        let deserialized = PrebindCksumCommand::parse(&serialized).unwrap();
         assert_eq!(cmd, deserialized);
     }
 }

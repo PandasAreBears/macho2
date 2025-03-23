@@ -9,9 +9,9 @@ use nom::{
 };
 use num_derive::FromPrimitive;
 
-use crate::helpers::string_upto_null_terminator;
+use crate::{helpers::string_upto_null_terminator, macho::MachOResult};
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 bitflags::bitflags! {
     #[repr(transparent)]
@@ -122,7 +122,7 @@ impl SectionAttributes {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Section32 {
     pub sectname: String,
     pub segname: String,
@@ -172,9 +172,7 @@ impl Section32 {
             },
         ))
     }
-}
 
-impl Serialize for Section32 {
     fn serialize(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend(self.sectname.as_bytes());
@@ -195,7 +193,7 @@ impl Serialize for Section32 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Section64 {
     pub sectname: String,
     pub segname: String,
@@ -248,10 +246,8 @@ impl Section64 {
             },
         ))
     }
-}
 
-impl Serialize for Section64 {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend(self.sectname.as_bytes());
         bytes.extend(vec![0; 16 - self.sectname.len()]);
@@ -272,7 +268,7 @@ impl Serialize for Section64 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct SegmentCommand32 {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
@@ -288,8 +284,8 @@ pub struct SegmentCommand32 {
     pub sects: Vec<Section32>,
 }
 
-impl<'a> SegmentCommand32 {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for SegmentCommand32 {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, segname) = take(16usize)(cursor)?;
         let (_, segname) = string_upto_null_terminator(segname)?;
@@ -302,10 +298,9 @@ impl<'a> SegmentCommand32 {
 
         let (cursor, flags) = SGFlags::parse(cursor)?;
 
-        let (cursor, sects) = multi::count(Section32::parse, nsects as usize)(cursor)?;
+        let (_, sects) = multi::count(Section32::parse, nsects as usize)(cursor)?;
 
-        Ok((
-            cursor,
+        Ok(
             SegmentCommand32 {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -320,11 +315,9 @@ impl<'a> SegmentCommand32 {
                 flags,
                 sects,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for SegmentCommand32 {
     fn serialize(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend(self.cmd.serialize());
@@ -346,7 +339,7 @@ impl Serialize for SegmentCommand32 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SegmentCommand64 {
     pub cmdsize: u32,
     pub cmd: LCLoadCommand,
@@ -362,8 +355,8 @@ pub struct SegmentCommand64 {
     pub sections: Vec<Section64>,
 }
 
-impl<'a> SegmentCommand64 {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for SegmentCommand64 {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, segname) = take(16usize)(cursor)?;
         let (_, segname) = string_upto_null_terminator(segname)?;
@@ -376,10 +369,9 @@ impl<'a> SegmentCommand64 {
                 cursor,
             )?;
 
-        let (cursor, sections) = multi::count(Section64::parse, nsects as usize)(cursor)?;
+        let (_, sections) = multi::count(Section64::parse, nsects as usize)(cursor)?;
 
-        Ok((
-            cursor,
+        Ok(
             SegmentCommand64 {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -394,11 +386,9 @@ impl<'a> SegmentCommand64 {
                 flags,
                 sections,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for SegmentCommand64 {
     fn serialize(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend(self.cmd.serialize());
@@ -416,14 +406,14 @@ impl Serialize for SegmentCommand64 {
         for sect in &self.sections {
             bytes.extend(sect.serialize());
         }
-        self.pad_to_size(&mut bytes, self.cmdsize as usize);
+        pad_to_size(&mut bytes, self.cmdsize as usize);
         bytes
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::command::{LCLoadCommand, Serialize};
+    use crate::command::{LCLoadCommand, LoadCommandParser};
 
     use super::SegmentCommand64;
 
@@ -431,8 +421,7 @@ mod tests {
     fn test_parse_segment64() {
         // __TEXT section from /usr/lib/libffi.dylib
         let data = include_bytes!("test/seg64.bin");
-        let (remaining, seg) = SegmentCommand64::parse(data).unwrap();
-        assert!(remaining.len() == 0);
+        let seg = SegmentCommand64::parse(data).unwrap();
 
         assert_eq!(seg.cmd, LCLoadCommand::LcSegment64);
         assert_eq!(seg.sections.len(), 6);

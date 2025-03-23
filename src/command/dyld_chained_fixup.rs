@@ -1,7 +1,4 @@
-use std::{
-    io::{Read, Seek, SeekFrom},
-    marker::PhantomData,
-};
+use std::io::{Read, Seek, SeekFrom};
 
 use bitfield::bitfield;
 use nom::{
@@ -14,9 +11,9 @@ use nom::{
 use num::FromPrimitive;
 use num_derive::FromPrimitive;
 
-use crate::helpers::string_upto_null_terminator;
+use crate::{helpers::string_upto_null_terminator, macho::MachOResult};
 
-use super::{linkedit_data::LinkeditDataCommand, LoadCommand, Raw, Resolved, Serialize};
+use super::{linkedit_data::LinkeditDataCommand, pad_to_size, LoadCommand, LoadCommandParser, LoadCommandResolver};
 
 #[derive(Debug, FromPrimitive, Clone, PartialEq, Eq)]
 pub enum DyldFixupPACKey {
@@ -573,7 +570,7 @@ impl DyldPointerFixup {
         }
     }
 
-    pub fn rebase_base_vm_addr(self, lcs: &Vec<LoadCommand<Resolved>>) -> Option<u64> {
+    pub fn rebase_base_vm_addr(self, lcs: &Vec<LoadCommand>) -> Option<u64> {
         self.rebase_offset().and_then(|offset| {
             lcs.iter().find_map(|lc| match lc {
                 LoadCommand::Segment64(seg) => {
@@ -1047,38 +1044,40 @@ impl DyldFixup {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct DyldChainedFixupCommand<A> {
+pub struct DyldChainedFixupCommand {
     pub cmd: LinkeditDataCommand,
-    pub header: Option<DyldChainedFixupsHeader>,
-    pub imports: Option<Vec<DyldChainedImport>>,
-    pub starts: Option<DyldStartsInImage>,
-    pub fixups: Option<Vec<DyldFixup>>,
-
-    phantom: PhantomData<A>,
 }
 
-impl<'a> DyldChainedFixupCommand<Raw> {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for DyldChainedFixupCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (_, cmd) = LinkeditDataCommand::parse(ldcmd)?;
-        Ok((
-            ldcmd,
+        Ok(
             DyldChainedFixupCommand {
                 cmd,
-                header: None,
-                imports: None,
-                starts: None,
-                fixups: None,
-                phantom: PhantomData,
             },
-        ))
+        )
+    }
+
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        pad_to_size(&mut buf, self.cmd.cmdsize as usize);
+        buf
     }
 }
 
-impl<'a> DyldChainedFixupCommand<Resolved> {
-    pub fn parse<T: Read + Seek>(ldcmd: &'a [u8], buf: &mut T) -> IResult<&'a [u8], Self> {
-        let (_, cmd) = LinkeditDataCommand::parse(ldcmd)?;
-        let mut blob = vec![0; cmd.datasize as usize];
-        buf.seek(SeekFrom::Start(cmd.dataoff as u64)).unwrap();
+#[derive(Debug, PartialEq, Eq)]
+pub struct DyldChainedFixupCommandResolved {
+    pub header: DyldChainedFixupsHeader,
+    pub imports: Vec<DyldChainedImport>,
+    pub starts: DyldStartsInImage,
+    pub fixups: Vec<DyldFixup>,
+}
+
+impl<T: Read + Seek> LoadCommandResolver<T, DyldChainedFixupCommandResolved> for DyldChainedFixupCommand {
+    fn resolve(&self, buf: &mut T) -> MachOResult<DyldChainedFixupCommandResolved> {
+        let mut blob = vec![0; self.cmd.datasize as usize];
+        buf.seek(SeekFrom::Start(self.cmd.dataoff as u64)).unwrap();
         buf.read_exact(&mut blob).unwrap();
 
         let (_, header) = DyldChainedFixupsHeader::parse(&blob).unwrap();
@@ -1099,27 +1098,16 @@ impl<'a> DyldChainedFixupCommand<Resolved> {
             fixups.extend(DyldFixup::parse(buf, start, &imports));
         }
 
-        Ok((
-            ldcmd,
-            DyldChainedFixupCommand {
-                cmd,
-                header: Some(header),
-                imports: Some(imports),
-                starts: Some(starts),
-                fixups: Some(fixups),
-                phantom: PhantomData,
+        Ok(
+            DyldChainedFixupCommandResolved {
+                header: header,
+                imports: imports,
+                starts: starts,
+                fixups: fixups,
             },
-        ))
+        )
     }
-}
-
-impl<T> Serialize for DyldChainedFixupCommand<T> {
-    fn serialize(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
-        buf.extend(self.cmd.serialize());
-        self.pad_to_size(&mut buf, self.cmd.cmdsize as usize);
-        buf
-    }
+    
 }
 
 #[cfg(test)]
@@ -1137,15 +1125,10 @@ mod tests {
                 dataoff: 0,
                 datasize: 0,
             },
-            header: None,
-            imports: None,
-            starts: None,
-            fixups: None,
-            phantom: PhantomData,
         };
 
         let bytes = cmd.serialize();
-        let deserialised = DyldChainedFixupCommand::<Raw>::parse(&bytes).unwrap().1;
+        let deserialised = DyldChainedFixupCommand::parse(&bytes).unwrap();
         assert_eq!(cmd, deserialised);
     }
 }

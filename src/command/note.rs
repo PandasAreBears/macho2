@@ -1,11 +1,8 @@
-use nom::{
-    number::complete::{le_u32, le_u64},
-    IResult,
-};
+use nom::number::complete::{le_u32, le_u64};
 
-use crate::helpers::string_upto_null_terminator;
+use crate::{helpers::string_upto_null_terminator, macho::MachOResult};
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct NoteCommand {
@@ -16,18 +13,17 @@ pub struct NoteCommand {
     pub size: u64,
 }
 
-impl<'a> NoteCommand {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for NoteCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, data_owner_offset) = le_u32(cursor)?;
         let (cursor, offset) = le_u64(cursor)?;
         let (_, size) = le_u64(cursor)?;
 
-        let (cursor, data_owner) =
+        let (_, data_owner) =
             string_upto_null_terminator(&ldcmd[data_owner_offset as usize..])?;
 
-        Ok((
-            cursor,
+        Ok(
             NoteCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -35,11 +31,9 @@ impl<'a> NoteCommand {
                 offset,
                 size,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for NoteCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
@@ -49,7 +43,7 @@ impl Serialize for NoteCommand {
         buf.extend(self.size.to_le_bytes());
         buf.extend(self.data_owner.as_bytes());
         buf.push(0);
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -70,7 +64,7 @@ mod tests {
         };
 
         let serialized = cmd.serialize();
-        let deserialized = NoteCommand::parse(&serialized).unwrap().1;
+        let deserialized = NoteCommand::parse(&serialized).unwrap();
         assert_eq!(cmd, deserialized);
     }
 }

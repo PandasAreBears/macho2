@@ -1,7 +1,4 @@
-use std::{
-    io::{Read, Seek, SeekFrom},
-    marker::PhantomData,
-};
+use std::io::{Read, Seek, SeekFrom};
 
 use nom::{
     error::{Error, ErrorKind},
@@ -12,10 +9,10 @@ use nom::{
 };
 use num_derive::FromPrimitive;
 
-use crate::helpers::{read_sleb, read_uleb, string_upto_null_terminator};
+use crate::{helpers::{read_sleb, read_uleb, string_upto_null_terminator}, macho::MachOResult};
 
 use super::{
-    dyld_exports_trie::DyldExport, LCLoadCommand, LoadCommandBase, Raw, Resolved, Serialize,
+    dyld_exports_trie::DyldExport, pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser, LoadCommandResolver 
 };
 
 #[derive(Debug, FromPrimitive, Clone, Copy, PartialEq, Eq)]
@@ -352,7 +349,7 @@ impl BindInstruction {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct DyldInfoCommand<A> {
+pub struct DyldInfoCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
     pub rebase_off: u32,
@@ -365,21 +362,13 @@ pub struct DyldInfoCommand<A> {
     pub lazy_bind_size: u32,
     pub export_off: u32,
     pub export_size: u32,
-
-    pub rebase_instructions: Option<Vec<RebaseInstruction>>,
-    pub bind_instructions: Option<Vec<BindInstruction>>,
-    pub weak_instructions: Option<Vec<BindInstruction>>,
-    pub lazy_instructions: Option<Vec<BindInstruction>>,
-    pub exports: Option<Vec<DyldExport>>,
-
-    phantom: PhantomData<A>,
 }
 
-impl<'a> DyldInfoCommand<Raw> {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for DyldInfoCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (
-            cursor,
+            _,
             (
                 rebase_off,
                 rebase_size,
@@ -396,8 +385,7 @@ impl<'a> DyldInfoCommand<Raw> {
             le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
         ))(cursor)?;
 
-        Ok((
-            cursor,
+        Ok(
             DyldInfoCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -411,90 +399,10 @@ impl<'a> DyldInfoCommand<Raw> {
                 lazy_bind_size,
                 export_off,
                 export_size,
-                rebase_instructions: None,
-                bind_instructions: None,
-                weak_instructions: None,
-                lazy_instructions: None,
-                exports: None,
-                phantom: PhantomData,
             },
-        ))
+        )
     }
-}
 
-impl<'a> DyldInfoCommand<Resolved> {
-    pub fn parse<T: Read + Seek>(ldcmd: &'a [u8], buf: &mut T) -> IResult<&'a [u8], Self> {
-        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
-        let (
-            cursor,
-            (
-                rebase_off,
-                rebase_size,
-                bind_off,
-                bind_size,
-                weak_bind_off,
-                weak_bind_size,
-                lazy_bind_off,
-                lazy_bind_size,
-                export_off,
-                export_size,
-            ),
-        ) = sequence::tuple((
-            le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
-        ))(cursor)?;
-
-        let mut rebase_blob = vec![0u8; rebase_size as usize];
-        buf.seek(SeekFrom::Start(rebase_off as u64)).unwrap();
-        buf.read_exact(&mut rebase_blob).unwrap();
-        let rebase_instructions = Some(RebaseInstruction::parse(&rebase_blob).unwrap().1);
-
-        let mut bind_blob = vec![0u8; bind_size as usize];
-        buf.seek(SeekFrom::Start(bind_off as u64)).unwrap();
-        buf.read_exact(&mut bind_blob).unwrap();
-        let bind_instructions = Some(BindInstruction::parse(&bind_blob).unwrap().1);
-
-        let mut weak_bind_blob = vec![0u8; weak_bind_size as usize];
-        buf.seek(SeekFrom::Start(weak_bind_off as u64)).unwrap();
-        buf.read_exact(&mut weak_bind_blob).unwrap();
-        let weak_instructions = Some(BindInstruction::parse(&weak_bind_blob).unwrap().1);
-
-        let mut lazy_bind_blob = vec![0u8; lazy_bind_size as usize];
-        buf.seek(SeekFrom::Start(lazy_bind_off as u64)).unwrap();
-        buf.read_exact(&mut lazy_bind_blob).unwrap();
-        let lazy_instructions = Some(BindInstruction::parse(&lazy_bind_blob).unwrap().1);
-
-        let mut export_blob = vec![0u8; export_size as usize];
-        buf.seek(SeekFrom::Start(export_off as u64)).unwrap();
-        buf.read_exact(&mut export_blob).unwrap();
-        let exports = Some(DyldExport::parse(&export_blob).unwrap().1);
-
-        Ok((
-            cursor,
-            DyldInfoCommand {
-                cmd: base.cmd,
-                cmdsize: base.cmdsize,
-                rebase_off,
-                rebase_size,
-                bind_off,
-                bind_size,
-                weak_bind_off,
-                weak_bind_size,
-                lazy_bind_off,
-                lazy_bind_size,
-                export_off,
-                export_size,
-                rebase_instructions,
-                bind_instructions,
-                weak_instructions,
-                lazy_instructions,
-                exports,
-                phantom: PhantomData,
-            },
-        ))
-    }
-}
-
-impl<T> Serialize for DyldInfoCommand<T> {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
@@ -509,8 +417,56 @@ impl<T> Serialize for DyldInfoCommand<T> {
         buf.extend(self.lazy_bind_size.to_le_bytes());
         buf.extend(self.export_off.to_le_bytes());
         buf.extend(self.export_size.to_le_bytes());
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct DyldInfoCommandResolved {
+    pub rebase_instructions: Vec<RebaseInstruction>,
+    pub bind_instructions: Vec<BindInstruction>,
+    pub weak_instructions: Vec<BindInstruction>,
+    pub lazy_instructions: Vec<BindInstruction>,
+    pub exports: Vec<DyldExport>,
+}
+
+impl<T: Read + Seek> LoadCommandResolver<T, DyldInfoCommandResolved> for DyldInfoCommand {
+    fn resolve(&self, buf: &mut T) -> MachOResult<DyldInfoCommandResolved> {
+        let mut rebase_blob = vec![0u8; self.rebase_size as usize];
+        buf.seek(SeekFrom::Start(self.rebase_off as u64)).unwrap();
+        buf.read_exact(&mut rebase_blob).unwrap();
+        let rebase_instructions = RebaseInstruction::parse(&rebase_blob).unwrap().1;
+
+        let mut bind_blob = vec![0u8; self.bind_size as usize];
+        buf.seek(SeekFrom::Start(self.bind_off as u64)).unwrap();
+        buf.read_exact(&mut bind_blob).unwrap();
+        let bind_instructions = BindInstruction::parse(&bind_blob).unwrap().1;
+
+        let mut weak_bind_blob = vec![0u8; self.weak_bind_size as usize];
+        buf.seek(SeekFrom::Start(self.weak_bind_off as u64)).unwrap();
+        buf.read_exact(&mut weak_bind_blob).unwrap();
+        let weak_instructions = BindInstruction::parse(&weak_bind_blob).unwrap().1;
+
+        let mut lazy_bind_blob = vec![0u8; self.lazy_bind_size as usize];
+        buf.seek(SeekFrom::Start(self.lazy_bind_off as u64)).unwrap();
+        buf.read_exact(&mut lazy_bind_blob).unwrap();
+        let lazy_instructions = BindInstruction::parse(&lazy_bind_blob).unwrap().1;
+
+        let mut export_blob = vec![0u8; self.export_size as usize];
+        buf.seek(SeekFrom::Start(self.export_off as u64)).unwrap();
+        buf.read_exact(&mut export_blob).unwrap();
+        let exports = DyldExport::parse(&export_blob).unwrap().1;
+
+        Ok(
+            DyldInfoCommandResolved {
+                rebase_instructions,
+                bind_instructions,
+                weak_instructions,
+                lazy_instructions,
+                exports,
+            },
+        )
     }
 }
 
@@ -533,16 +489,10 @@ mod tests {
             lazy_bind_size: 0x00000008,
             export_off: 0x00000009,
             export_size: 0x0000000a,
-            rebase_instructions: None,
-            bind_instructions: None,
-            weak_instructions: None,
-            lazy_instructions: None,
-            exports: None,
-            phantom: PhantomData,
         };
 
         let ser = dyld.serialize();
-        let (_, parsed) = DyldInfoCommand::<Raw>::parse(&ser).unwrap();
+        let parsed = DyldInfoCommand::parse(&ser).unwrap();
         assert_eq!(parsed, dyld);
     }
 }

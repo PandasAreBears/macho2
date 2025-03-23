@@ -1,6 +1,6 @@
 use nom::{number::complete::le_u32, IResult};
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct LinkeditDataCommand {
@@ -26,16 +26,14 @@ impl LinkeditDataCommand {
             },
         ))
     }
-}
 
-impl Serialize for LinkeditDataCommand {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
         buf.extend(self.cmdsize.to_le_bytes());
         buf.extend(self.dataoff.to_le_bytes());
         buf.extend(self.datasize.to_le_bytes());
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }

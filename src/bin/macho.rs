@@ -1,10 +1,10 @@
 use macho2::{
-    command::{segment::Protection, LoadCommand, Resolved}, header::MachHeader, machine::ThreadState, macho::{FatMachO, MachO, MachOErr, MachOResult}
+    command::{segment::Protection, LoadCommand}, header::MachHeader, machine::ThreadState, macho::{FatMachO, MachO, MachOErr, MachOResult}
 };
 use std::{
     env,
     fs::File,
-    io::{stdout, Write},
+    io::{stdout, Read, Seek, Write},
 };
 
 fn main() -> MachOResult<()> {
@@ -23,8 +23,8 @@ fn main() -> MachOResult<()> {
         }
     };
 
-    if FatMachO::<_, Resolved>::is_fat_magic(&mut file)? {
-        let mut fat_macho = FatMachO::<_, Resolved>::parse(&mut file).unwrap();
+    if FatMachO::<_>::is_fat_magic(&mut file)? {
+        let mut fat_macho = FatMachO::<_>::parse(&mut file).unwrap();
         println!("This is a fat macho file. Please select an architecture:");
         for (i, arch) in fat_macho.archs.iter().enumerate() {
             println!("{}: {:?} {:?}", i, arch.cputype(), arch.cpusubtype());
@@ -44,21 +44,19 @@ fn main() -> MachOResult<()> {
             }
         };
         let macho = fat_macho
-            .macho::<Resolved>(fat_macho.archs[index].cputype())
+            .macho(fat_macho.archs[index].cputype())
             .map_err(|e| {
                 panic!("Failed to extract Mach-O: {}", e);
             })
             .unwrap();
         print_header(macho.header);
-        print_load_commands(&macho.load_commands);
-    } else if MachO::<_, Resolved>::is_macho_magic(&mut file)? {
-        let macho = MachO::<_, Resolved>::parse(file).unwrap();
+        print_load_commands(macho);
+    } else if MachO::<_>::is_macho_magic(&mut file)? {
+        let macho = MachO::<_>::parse(file).unwrap();
         print_header(macho.header);
-        print_load_commands(&macho.load_commands);
+        print_load_commands(macho);
     } else {
-        return Err(MachOErr {
-            detail: "Invalid Mach-O file".to_string(),
-        });
+        return Err(MachOErr::InvalidValue("Invalid Mach-O file".to_string()));
     };
 
     Ok(())
@@ -74,15 +72,17 @@ fn print_header(hdr: MachHeader) {
     );
 }
 
-fn print_load_commands(lcs: &Vec<LoadCommand<Resolved>>) {
-    lcs.iter().enumerate().for_each(|(i, lc)| {
-        print!("{:03}: ", i);
-        print_load_command(lc);
-    });
-}
+fn print_load_commands<T: Seek + Read>(mut macho: MachO<T>) {
+    let exportstrie = macho.resolve_dyldexportstrie();
+    let dyldinfo = macho.resolve_dyldinfo();
+    let dyldinfoonly = macho.resolve_dyldinfoonly();
+    let codesignature = macho.resolve_codesign();
+    let functionstarts = macho.resolve_functionstarts();
+    let dysymtab = macho.resolve_dysymtab();
+    let fixups = macho.resolve_fixups();
 
-fn print_load_command(lc: &LoadCommand<Resolved>) {
-    match lc {
+    macho.load_commands.iter().for_each(|lc| {
+        match lc {
         LoadCommand::None => todo!(),
         LoadCommand::Segment32(segment_command32) => {
             println!(
@@ -159,9 +159,9 @@ fn print_load_command(lc: &LoadCommand<Resolved>) {
         LoadCommand::Dysymtab(dysymtab_command) => println!(
             "LC_DYSYMTAB  nlocals={} nextdefs={} nundefs={} nindirects={}",
             dysymtab_command.nlocalsym,
-            dysymtab_command.extdefs.as_ref().unwrap().len(),
+            dysymtab.as_ref().unwrap().extdefs.len(),
             dysymtab_command.nundefsym,
-            dysymtab_command.indirect.as_ref().unwrap().len(),
+            dysymtab.as_ref().unwrap().indirect.len(),
         ),
         LoadCommand::LoadDylib(dylib_command) => {
             println!(
@@ -207,10 +207,10 @@ fn print_load_command(lc: &LoadCommand<Resolved>) {
         LoadCommand::Routines64(_) => println!("LC_ROUTINES_64  "),
         LoadCommand::UUID(uuid_command) => println!("LC_UUID  {}", uuid_command.uuid),
         LoadCommand::Rpath(rpath_command) => println!("LC_RPATH  {}", rpath_command.path),
-        LoadCommand::CodeSignature(code_sign_command) => {
+        LoadCommand::CodeSignature(_) => {
             println!(
                 "LC_CODE_SIGNATURE  nblobs={}",
-                code_sign_command.blobs.as_ref().unwrap().len()
+                codesignature.as_ref().unwrap().blobs.len()
             )
         }
         LoadCommand::SegmentSplitInfo(_) => println!("LC_SEGMENT_SPLIT_INFO  "),
@@ -230,34 +230,27 @@ fn print_load_command(lc: &LoadCommand<Resolved>) {
             "LC_ENCRYPTION_INFO  off=0x{:08x} sz=0x{:08x}",
             encryption_info_command.cryptoff, encryption_info_command.cryptsize
         ),
-        LoadCommand::DyldInfo(dyld_info_command) => println!(
+        LoadCommand::DyldInfo(_) => println!(
             "LC_DYLD_INFO  nrebase={} nbind={} nweakbind={} nlazybind={} nexport={}",
-            dyld_info_command
+            dyldinfo.as_ref().unwrap()
                 .rebase_instructions
-                .as_ref()
-                .unwrap()
                 .len(),
-            dyld_info_command.bind_instructions.as_ref().unwrap().len(),
-            dyld_info_command.weak_instructions.as_ref().unwrap().len(),
-            dyld_info_command
+            dyldinfo.as_ref().unwrap().bind_instructions.len(),
+            dyldinfo.as_ref().unwrap().weak_instructions.len(),
+            dyldinfo.as_ref().unwrap() 
                 .lazy_instructions
-                .as_ref()
-                .as_ref()
-                .unwrap()
                 .len(),
-            dyld_info_command.exports.as_ref().unwrap().len()
+            dyldinfo.as_ref().unwrap().exports.len()
         ),
-        LoadCommand::DyldInfoOnly(dyld_info_command) => println!(
+        LoadCommand::DyldInfoOnly(_) => println!(
             "LC_DYLD_INFO_ONLY  nrebase={} nbind={} nweakbind={} nlazybind={} nexport={}",
-            dyld_info_command
+            dyldinfoonly.as_ref().unwrap()
                 .rebase_instructions
-                .as_ref()
-                .unwrap()
                 .len(),
-            dyld_info_command.bind_instructions.as_ref().unwrap().len(),
-            dyld_info_command.weak_instructions.as_ref().unwrap().len(),
-            dyld_info_command.lazy_instructions.as_ref().unwrap().len(),
-            dyld_info_command.exports.as_ref().unwrap().len()
+            dyldinfoonly.as_ref().unwrap().bind_instructions.len(),
+            dyldinfoonly.as_ref().unwrap().weak_instructions.len(),
+            dyldinfoonly.as_ref().unwrap().lazy_instructions.len(),
+            dyldinfoonly.as_ref().unwrap().exports.len()
         ),
         LoadCommand::LoadUpwardDylib(dylib_command) => {
             println!(
@@ -271,10 +264,10 @@ fn print_load_command(lc: &LoadCommand<Resolved>) {
         LoadCommand::VersionMinIphoneos(version_min_command) => {
             println!("LC_VERSION_MIN_IPHONEOS  {}", version_min_command.version)
         }
-        LoadCommand::FunctionStarts(function_starts_command) => {
+        LoadCommand::FunctionStarts(_) => {
             println!(
                 "LC_FUNCTION_STARTS  nfuncs={}",
-                function_starts_command.funcs.as_ref().unwrap().len()
+                functionstarts.as_ref().unwrap().funcs.len()
             )
         }
         LoadCommand::DyldEnvironment(dylinker_command) => {
@@ -317,19 +310,16 @@ fn print_load_command(lc: &LoadCommand<Resolved>) {
                 build_version_command.tools.len()
             )
         }
-        LoadCommand::DyldExportsTrie(dyld_exports_trie) => {
+        LoadCommand::DyldExportsTrie(_) => {
             println!(
                 "LC_DYLD_EXPORTS_TRIE  nexports={}",
-                dyld_exports_trie.exports.as_ref().unwrap().len()
+                exportstrie.as_ref().unwrap().exports.len()
             )
         }
-        LoadCommand::DyldChainedFixups(dyld_chained_fixup_command) => println!(
+        LoadCommand::DyldChainedFixups(_) => println!(
             "LC_DYLD_CHAINED_FIXUPS  nimports={} nstarts={}",
-            dyld_chained_fixup_command.imports.as_ref().unwrap().len(),
-            dyld_chained_fixup_command
-                .starts
-                .as_ref()
-                .unwrap()
+            fixups.as_ref().unwrap().imports.len(),
+            fixups.as_ref().unwrap().starts
                 .seg_starts
                 .len()
         ),
@@ -341,7 +331,9 @@ fn print_load_command(lc: &LoadCommand<Resolved>) {
         ),
         LoadCommand::AtomInfo(_) => println!("LC_ATOM_INFO  "),
     }
+    })
 }
+
 
 fn protection_to_string(prot: Protection) -> String {
     let mut prot_str = String::new();

@@ -1,22 +1,19 @@
-use nom::IResult;
-
-use crate::machine::{
+use crate::{machine::{
     Arm64ThreadState64, ThreadState, ThreadStateArm64Flavor, ThreadStateBase, ThreadStateX86Flavor, X86ThreadState64
-};
+}, macho::MachOResult};
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ThreadCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
     pub threads: Vec<ThreadState>,
 }
 
-impl<'a> ThreadCommand {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for ThreadCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (mut cursor, base) = LoadCommandBase::parse(ldcmd)?;
-        let end = &ldcmd[base.cmdsize as usize..];
         let mut threads = Vec::new();
         loop {
             if cursor.is_empty() {
@@ -29,18 +26,15 @@ impl<'a> ThreadCommand {
             threads.push(thread);
         }
 
-        Ok((
-            end,
+        Ok(
             ThreadCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
                 threads,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for ThreadCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
@@ -58,7 +52,7 @@ impl Serialize for ThreadCommand {
             }
             buf.extend(thread.serialize());
         }
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -89,7 +83,7 @@ mod tests {
         };
 
         let serialised = cmd.serialize();
-        let deserialised = ThreadCommand::parse(&serialised).unwrap().1;
+        let deserialised = ThreadCommand::parse(&serialised).unwrap();
         assert_eq!(cmd.cmd, deserialised.cmd);
     }
 }

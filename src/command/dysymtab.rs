@@ -1,20 +1,19 @@
-use std::{
-    io::{Read, Seek},
-    marker::PhantomData,
-};
+use std::io::{Read, Seek};
 
 use nom::{
     error::{self},
     number::complete::le_u32,
-    sequence, IResult,
+    sequence,
 };
 
+use crate::macho::MachOResult;
+
 use super::{
-    symtab::Nlist64, LCLoadCommand, LoadCommand, LoadCommandBase, Raw, Resolved, Serialize,
+    pad_to_size, symtab::{Nlist64, SymtabCommandResolved}, LCLoadCommand, LoadCommandBase, LoadCommandParser
 };
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct DysymtabCommand<A> {
+pub struct DysymtabCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
     pub ilocalsym: u32,
@@ -35,24 +34,18 @@ pub struct DysymtabCommand<A> {
     pub nextrel: u32,
     pub locreloff: u32,
     pub nlocrel: u32,
-
-    pub locals: Option<Vec<Nlist64>>,
-    pub extdefs: Option<Vec<Nlist64>>,
-    pub undefs: Option<Vec<Nlist64>>,
-    pub indirect: Option<Vec<Nlist64>>,
-
-    phantom: PhantomData<A>,
 }
-impl<A> DysymtabCommand<A> {
+
+impl DysymtabCommand {
     pub const INDIRECT_SYMBOL_LOCAL: u32 = 0x80000000;
     pub const INDIRECT_SYMBOL_ABS: u32 = 0x40000000;
 }
 
-impl<'a> DysymtabCommand<Raw> {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for DysymtabCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (
-            cursor,
+            _,
             (
                 ilocalsym,
                 nlocalsym,
@@ -78,8 +71,7 @@ impl<'a> DysymtabCommand<Raw> {
             le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
         ))(cursor)?;
 
-        Ok((
-            cursor,
+        Ok(
             DysymtabCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -101,146 +93,10 @@ impl<'a> DysymtabCommand<Raw> {
                 nextrel,
                 locreloff,
                 nlocrel,
-                locals: None,
-                extdefs: None,
-                undefs: None,
-                indirect: None,
-                phantom: PhantomData,
             },
-        ))
+        )
     }
-}
 
-impl<'a> DysymtabCommand<Resolved> {
-    pub fn parse<T: Seek + Read>(
-        ldcmd: &'a [u8],
-        buf: &mut T,
-        prev_cmds: &Vec<LoadCommand<Resolved>>,
-    ) -> IResult<&'a [u8], Self> {
-        let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
-        let (
-            cursor,
-            (
-                ilocalsym,
-                nlocalsym,
-                iextdefsym,
-                nextdefsym,
-                iundefsym,
-                nundefsym,
-                tocoff,
-                ntoc,
-                modtaboff,
-                nmodtab,
-                extrefsymoff,
-                nextrefsyms,
-                indirectsymoff,
-                nindirectsyms,
-                extreloff,
-                nextrel,
-                locreloff,
-                nlocrel,
-            ),
-        ) = sequence::tuple((
-            le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
-            le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
-        ))(cursor)?;
-
-        let symtab = prev_cmds
-            .iter()
-            .find_map(|cmd| {
-                if let LoadCommand::Symtab(symtab) = cmd {
-                    Some(symtab)
-                } else {
-                    None
-                }
-            })
-            .unwrap();
-
-        let locals = Some(
-            symtab.symbols.as_ref().unwrap()[ilocalsym as usize..(ilocalsym + nlocalsym) as usize]
-                .iter()
-                .cloned()
-                .collect(),
-        );
-
-        let extdefs = Some(
-            symtab.symbols.as_ref().unwrap()
-                [iextdefsym as usize..(iextdefsym + nextdefsym) as usize]
-                .iter()
-                .cloned()
-                .collect(),
-        );
-
-        let undefs = Some(
-            symtab.symbols.as_ref().unwrap()[iundefsym as usize..(iundefsym + nundefsym) as usize]
-                .iter()
-                .cloned()
-                .collect(),
-        );
-
-        let mut indirect_bytes = vec![0u8; nindirectsyms as usize * 4];
-        buf.seek(std::io::SeekFrom::Start(indirectsymoff as u64))
-            .unwrap();
-        buf.read_exact(&mut indirect_bytes).unwrap();
-
-        let indirect = {
-            let mut indices = Vec::new();
-            let mut cursor = &indirect_bytes[..];
-            while !cursor.is_empty() {
-                let (remaining, index) = le_u32::<_, error::Error<_>>(cursor).unwrap();
-                cursor = remaining;
-                if index & Self::INDIRECT_SYMBOL_LOCAL > 0 {
-                    // Symbol was strip(1)'d
-                    continue;
-                }
-                if index & Self::INDIRECT_SYMBOL_ABS > 0 {
-                    // Symbol was strip(1)'d
-                    continue;
-                }
-                indices.push(index);
-            }
-            Some(
-                indices
-                    .iter()
-                    .map(|&i| symtab.symbols.as_ref().unwrap()[i as usize].clone())
-                    .collect(),
-            )
-        };
-
-        Ok((
-            cursor,
-            DysymtabCommand {
-                cmd: base.cmd,
-                cmdsize: base.cmdsize,
-                ilocalsym,
-                nlocalsym,
-                iextdefsym,
-                nextdefsym,
-                iundefsym,
-                nundefsym,
-                tocoff,
-                ntoc,
-                modtaboff,
-                nmodtab,
-                extrefsymoff,
-                nextrefsyms,
-                indirectsymoff,
-                nindirectsyms,
-                extreloff,
-                nextrel,
-                locreloff,
-                nlocrel,
-                locals,
-                extdefs,
-                undefs,
-                indirect,
-                phantom: PhantomData,
-            },
-        ))
-    }
-}
-
-impl<T> Serialize for DysymtabCommand<T> {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
@@ -263,8 +119,75 @@ impl<T> Serialize for DysymtabCommand<T> {
         buf.extend(self.nextrel.to_le_bytes());
         buf.extend(self.locreloff.to_le_bytes());
         buf.extend(self.nlocrel.to_le_bytes());
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct DysymtabCommandResolved {
+    pub locals: Vec<Nlist64>,
+    pub extdefs: Vec<Nlist64>,
+    pub undefs: Vec<Nlist64>,
+    pub indirect: Vec<Nlist64>,
+}
+
+impl DysymtabCommand {
+    pub fn resolve<T: Read + Seek>(&self, buf: &mut T, symtab: SymtabCommandResolved) -> MachOResult<DysymtabCommandResolved> {
+        let locals = 
+            symtab.symbols[self.ilocalsym as usize..(self.ilocalsym + self.nlocalsym) as usize]
+                .iter()
+                .cloned()
+                .collect();
+
+        let extdefs = 
+            symtab.symbols
+                [self.iextdefsym as usize..(self.iextdefsym + self.nextdefsym) as usize]
+                .iter()
+                .cloned()
+                .collect();
+
+        let undefs =
+            symtab.symbols[self.iundefsym as usize..(self.iundefsym + self.nundefsym) as usize]
+                .iter()
+                .cloned()
+                .collect();
+
+        let mut indirect_bytes = vec![0u8; self.nindirectsyms as usize * 4];
+        buf.seek(std::io::SeekFrom::Start(self.indirectsymoff as u64))
+            .unwrap();
+        buf.read_exact(&mut indirect_bytes).unwrap();
+
+        let indirect = {
+            let mut indices = Vec::new();
+            let mut cursor = &indirect_bytes[..];
+            while !cursor.is_empty() {
+                let (remaining, index) = le_u32::<_, error::Error<_>>(cursor).unwrap();
+                cursor = remaining;
+                if index & Self::INDIRECT_SYMBOL_LOCAL > 0 {
+                    // Symbol was strip(1)'d
+                    continue;
+                }
+                if index & Self::INDIRECT_SYMBOL_ABS > 0 {
+                    // Symbol was strip(1)'d
+                    continue;
+                }
+                indices.push(index);
+            }
+            indices
+                .iter()
+                .map(|&i| symtab.symbols[i as usize].clone())
+                .collect()
+        };
+
+        Ok(
+            DysymtabCommandResolved {
+                locals,
+                extdefs,
+                undefs,
+                indirect,
+            },
+        )
     }
 }
 
@@ -296,15 +219,10 @@ mod tests {
             nextrel: 16,
             locreloff: 17,
             nlocrel: 18,
-            locals: None,
-            extdefs: None,
-            undefs: None,
-            indirect: None,
-            phantom: PhantomData,
         };
 
         let serialized = cmd.serialize();
-        let deserialized = DysymtabCommand::<Raw>::parse(&serialized).unwrap().1;
+        let deserialized = DysymtabCommand::parse(&serialized).unwrap();
         assert_eq!(cmd, deserialized);
     }
 }

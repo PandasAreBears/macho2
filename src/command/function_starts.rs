@@ -1,13 +1,9 @@
-use std::{
-    io::{Read, Seek, SeekFrom},
-    marker::PhantomData,
-};
+use std::io::{Read, Seek, SeekFrom};
 
-use nom::IResult;
 
-use crate::helpers::read_uleb_many;
+use crate::{helpers::read_uleb_many, macho::MachOResult};
 
-use super::{linkedit_data::LinkeditDataCommand, LCLoadCommand, Raw, Resolved, Serialize};
+use super::{linkedit_data::LinkeditDataCommand, pad_to_size, LCLoadCommand, LoadCommandParser, LoadCommandResolver};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct FunctionOffset {
@@ -16,38 +12,46 @@ pub struct FunctionOffset {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct FunctionStartsCommand<A> {
+pub struct FunctionStartsCommand {
     pub cmd: LCLoadCommand,
     pub cmdsize: u32,
     pub dataoff: u32,
     pub datasize: u32,
-    pub funcs: Option<Vec<FunctionOffset>>,
-
-    phantom: PhantomData<A>,
 }
 
-impl<'a> FunctionStartsCommand<Raw> {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
-        let (bytes, linkeditcmd) = LinkeditDataCommand::parse(ldcmd)?;
-        Ok((
-            bytes,
+impl LoadCommandParser for FunctionStartsCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
+        let (_, linkeditcmd) = LinkeditDataCommand::parse(ldcmd)?;
+        Ok(
             FunctionStartsCommand {
                 cmd: linkeditcmd.cmd,
                 cmdsize: linkeditcmd.cmdsize,
                 dataoff: linkeditcmd.dataoff,
                 datasize: linkeditcmd.datasize,
-                funcs: None,
-                phantom: PhantomData,
             },
-        ))
+        )
+    }
+
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend(self.cmd.serialize());
+        buf.extend(self.cmdsize.to_le_bytes());
+        buf.extend(self.dataoff.to_le_bytes());
+        buf.extend(self.datasize.to_le_bytes());
+        pad_to_size(&mut buf, self.cmdsize as usize);
+        buf
     }
 }
 
-impl<'a> FunctionStartsCommand<Resolved> {
-    pub fn parse<T: Read + Seek>(ldcmd: &'a [u8], buf: &mut T) -> IResult<&'a [u8], Self> {
-        let (bytes, linkeditcmd) = LinkeditDataCommand::parse(ldcmd)?;
-        let mut funcs_blob = vec![0u8; linkeditcmd.datasize as usize];
-        buf.seek(SeekFrom::Start(linkeditcmd.dataoff as u64))
+#[derive(Debug, PartialEq, Eq)]
+pub struct FunctionStartsCommandResolved {
+    pub funcs: Vec<FunctionOffset>,
+}
+
+impl<T: Read + Seek> LoadCommandResolver<T, FunctionStartsCommandResolved> for FunctionStartsCommand {
+    fn resolve(&self, buf: &mut T) -> MachOResult<FunctionStartsCommandResolved> {
+        let mut funcs_blob = vec![0u8; self.datasize as usize];
+        buf.seek(SeekFrom::Start(self.dataoff as u64))
             .unwrap();
         buf.read_exact(&mut funcs_blob).unwrap();
 
@@ -66,29 +70,11 @@ impl<'a> FunctionStartsCommand<Resolved> {
             });
         }
 
-        Ok((
-            bytes,
-            FunctionStartsCommand {
-                cmd: linkeditcmd.cmd,
-                cmdsize: linkeditcmd.cmdsize,
-                dataoff: linkeditcmd.dataoff,
-                datasize: linkeditcmd.datasize,
-                funcs: Some(results),
-                phantom: PhantomData,
+        Ok(
+            FunctionStartsCommandResolved {
+                funcs: results
             },
-        ))
-    }
-}
-
-impl<T> Serialize for FunctionStartsCommand<T> {
-    fn serialize(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
-        buf.extend(self.cmd.serialize());
-        buf.extend(self.cmdsize.to_le_bytes());
-        buf.extend(self.dataoff.to_le_bytes());
-        buf.extend(self.datasize.to_le_bytes());
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
-        buf
+        )
     }
 }
 
@@ -104,12 +90,10 @@ mod tests {
             cmdsize: 0x10,
             dataoff: 0x20,
             datasize: 0x30,
-            funcs: None,
-            phantom: PhantomData,
         };
 
         let serialized = func_starts.serialize();
-        let deserialized = FunctionStartsCommand::<Raw>::parse(&serialized).unwrap().1;
+        let deserialized = FunctionStartsCommand::parse(&serialized).unwrap();
         assert_eq!(func_starts, deserialized);
     }
 }

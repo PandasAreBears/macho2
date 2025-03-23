@@ -4,7 +4,6 @@ use nom::{number::complete::le_u32, sequence::tuple, IResult};
 use nom_derive::{Nom, Parse};
 
 use crate::{
-    command::Serialize,
     machine::{CpuSubType, CpuType},
     macho::{MachOErr, MachOResult},
 };
@@ -118,10 +117,8 @@ impl MachHeader32 {
             },
         ))
     }
-}
 
-impl Serialize for MachHeader32 {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend((self.magic as u32).to_le_bytes());
         buf.extend((self.cputype as u32).to_le_bytes());
@@ -172,10 +169,8 @@ impl MachHeader64 {
             },
         ))
     }
-}
 
-impl Serialize for MachHeader64 {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend((self.magic as u32).to_le_bytes());
         buf.extend((self.cputype as u32).to_le_bytes());
@@ -283,10 +278,8 @@ impl MachHeader {
             MachHeader::Header64(_) => MachHeader64::SIZE,
         }
     }
-}
 
-impl Serialize for MachHeader {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         match self {
             MachHeader::Header32(h) => h.serialize(),
             MachHeader::Header64(h) => h.serialize(),

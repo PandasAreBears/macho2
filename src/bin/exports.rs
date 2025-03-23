@@ -5,7 +5,6 @@ use std::{
 };
 
 use macho2::{
-    command::{LoadCommand, Resolved},
     header::MHMagic,
     macho::{FatMachO, MachO, MachOErr, MachOResult},
 };
@@ -37,8 +36,8 @@ fn main() -> MachOResult<()> {
         return Ok(());
     }
 
-    if FatMachO::<_, Resolved>::is_fat_magic(&mut file)? {
-        let mut fat_macho = FatMachO::<_, Resolved>::parse(&mut file).unwrap();
+    if FatMachO::<_>::is_fat_magic(&mut file)? {
+        let mut fat_macho = FatMachO::<_>::parse(&mut file).unwrap();
         println!("This is a fat macho file. Please select an architecture:");
         for (i, arch) in fat_macho.archs.iter().enumerate() {
             println!("{}: {:?} {:?}", i, arch.cputype(), arch.cpusubtype());
@@ -57,46 +56,24 @@ fn main() -> MachOResult<()> {
                 ),
             }
         };
-        let macho = fat_macho.macho::<Resolved>(fat_macho.archs[index].cputype())?;
-        print_nm(&macho);
-    } else if MachO::<_, Resolved>::is_macho_magic(&mut file)? {
-        let macho = MachO::<_, Resolved>::parse(file).unwrap();
-        print_nm(&macho);
+        let macho = fat_macho.macho(fat_macho.archs[index].cputype())?;
+        print_nm(macho);
+    } else if MachO::<_>::is_macho_magic(&mut file)? {
+        let macho = MachO::<_>::parse(file).unwrap();
+        print_nm(macho);
     } else {
-        return Err(MachOErr {
-            detail: "Invalid Mach-O file".to_string(),
-        });
+        return Err(MachOErr::InvalidValue("Invalid Mach-O file".to_string()));
     };
 
     Ok(())
 }
 
-fn print_nm<T: Read + Seek>(macho: &MachO<T, Resolved>) {
-    macho
-        .load_commands
-        .iter()
-        .filter(|lc| match lc {
-            LoadCommand::DyldExportsTrie(_)
-            | LoadCommand::DyldInfo(_)
-            | LoadCommand::DyldInfoOnly(_) => true,
-            _ => false,
-        })
-        .for_each(|lc| match lc {
-            LoadCommand::DyldExportsTrie(export) => {
-                export.exports.as_ref().unwrap().iter().for_each(|f| {
-                    println!("{}", f.name);
-                });
-            }
-            LoadCommand::DyldInfo(info) => {
-                info.exports.as_ref().unwrap().iter().for_each(|f| {
-                    println!("{}", f.name);
-                });
-            }
-            LoadCommand::DyldInfoOnly(info) => {
-                info.exports.as_ref().unwrap().iter().for_each(|f| {
-                    println!("{}", f.name);
-                });
-            }
-            _ => {}
-        });
+fn print_nm<T: Read + Seek>(mut macho: MachO<T>) {
+    if let Some(dyldinfo) = macho.resolve_dyldinfo() {
+        println!("{:?}", dyldinfo);
+    }
+
+    if let Some(exportstrie) = macho.resolve_dyldexportstrie() {
+        println!("{:?}", exportstrie);
+    }
 }

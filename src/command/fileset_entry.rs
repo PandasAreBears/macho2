@@ -1,11 +1,8 @@
-use nom::{
-    number::complete::{le_u32, le_u64},
-    IResult,
-};
+use nom::number::complete::{le_u32, le_u64};
 
-use crate::helpers::string_upto_null_terminator;
+use crate::{helpers::string_upto_null_terminator, macho::MachOResult};
 
-use super::{LCLoadCommand, LoadCommandBase, Serialize};
+use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct FilesetEntryCommand {
@@ -17,18 +14,17 @@ pub struct FilesetEntryCommand {
     pub reserved: u32,
 }
 
-impl<'a> FilesetEntryCommand {
-    pub fn parse(ldcmd: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl LoadCommandParser for FilesetEntryCommand {
+    fn parse(ldcmd: &[u8]) -> MachOResult<Self> {
         let (cursor, base) = LoadCommandBase::parse(ldcmd)?;
         let (cursor, vmaddr) = le_u64(cursor)?;
         let (cursor, fileoff) = le_u64(cursor)?;
         let (cursor, entry_id_offset) = le_u32(cursor)?;
         let (_, reserved) = le_u32(cursor)?;
 
-        let (cursor, entry_id) = string_upto_null_terminator(&ldcmd[entry_id_offset as usize..])?;
+        let (_, entry_id) = string_upto_null_terminator(&ldcmd[entry_id_offset as usize..])?;
 
-        Ok((
-            cursor,
+        Ok(
             FilesetEntryCommand {
                 cmd: base.cmd,
                 cmdsize: base.cmdsize,
@@ -37,11 +33,9 @@ impl<'a> FilesetEntryCommand {
                 entry_id,
                 reserved,
             },
-        ))
+        )
     }
-}
 
-impl Serialize for FilesetEntryCommand {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend(self.cmd.serialize());
@@ -52,7 +46,7 @@ impl Serialize for FilesetEntryCommand {
         buf.extend(self.reserved.to_le_bytes());
         buf.extend(self.entry_id.as_bytes());
         buf.push(0);
-        self.pad_to_size(&mut buf, self.cmdsize as usize);
+        pad_to_size(&mut buf, self.cmdsize as usize);
         buf
     }
 }
@@ -74,7 +68,7 @@ mod tests {
         };
 
         let serialized = cmd.serialize();
-        let deserialized = FilesetEntryCommand::parse(&serialized).unwrap().1;
+        let deserialized = FilesetEntryCommand::parse(&serialized).unwrap();
         assert_eq!(cmd, deserialized);
     }
 }

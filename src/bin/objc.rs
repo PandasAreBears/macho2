@@ -5,7 +5,6 @@ use std::{
 };
 
 use macho2::{
-    command::Resolved,
     macho::{FatMachO, MachO, MachOErr, MachOResult},
     objc::ObjCInfo,
 };
@@ -25,8 +24,8 @@ fn main() -> MachOResult<()> {
         }
     };
 
-    if FatMachO::<_, Resolved>::is_fat_magic(&mut file)? {
-        let mut fat_macho = FatMachO::<_, Resolved>::parse(&mut file).unwrap();
+    if FatMachO::<_>::is_fat_magic(&mut file)? {
+        let mut fat_macho = FatMachO::<_>::parse(&mut file).unwrap();
         println!("This is a fat macho file. Please select an architecture:");
         for (i, arch) in fat_macho.archs.iter().enumerate() {
             println!("{}: {:?} {:?}", i, arch.cputype(), arch.cpusubtype());
@@ -46,25 +45,23 @@ fn main() -> MachOResult<()> {
             }
         };
         let mut macho = fat_macho
-            .macho::<Resolved>(fat_macho.archs[index].cputype())
+            .macho(fat_macho.archs[index].cputype())
             .map_err(|e| {
                 panic!("Failed to extract Mach-O: {}", e);
             })
             .unwrap();
         print_objc(&mut macho);
-    } else if MachO::<_, Resolved>::is_macho_magic(&mut file)? {
-        let mut macho = MachO::<_, Resolved>::parse(file).unwrap();
+    } else if MachO::<_>::is_macho_magic(&mut file)? {
+        let mut macho = MachO::<_>::parse(file).unwrap();
         print_objc(&mut macho);
     } else {
-        return Err(MachOErr {
-            detail: "Invalid Mach-O file".to_string(),
-        });
+        return Err(MachOErr::InvalidValue("Invalid Mach-O file".to_string()));
     };
 
     Ok(())
 }
 
-fn print_objc<T: Read + Seek>(macho: &mut MachO<T, Resolved>) {
+fn print_objc<T: Read + Seek>(macho: &mut MachO<T>) {
     let objc_info = ObjCInfo::parse(macho).unwrap();
     println!("nselrefs={}", objc_info.selrefs.len());
     println!("nclasses={}", objc_info.classes.len());
