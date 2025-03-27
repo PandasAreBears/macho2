@@ -456,7 +456,7 @@ impl<T: Read + Seek> LoadCommandResolver<T, DyldInfoCommandResolved> for DyldInf
         let mut export_blob = vec![0u8; self.export_size as usize];
         buf.seek(SeekFrom::Start(self.export_off as u64)).unwrap();
         buf.read_exact(&mut export_blob).unwrap();
-        let exports = DyldExport::parse(&export_blob).unwrap().1;
+        let exports = DyldExport::parse(&export_blob)?;
 
         Ok(
             DyldInfoCommandResolved {

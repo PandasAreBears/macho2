@@ -40,31 +40,31 @@ pub struct DyldExport {
 }
 
 impl DyldExport {
-    pub fn parse(bytes: &[u8]) -> IResult<&[u8], Vec<DyldExport>> {
+    pub fn parse(bytes: &[u8]) -> MachOResult<Vec<DyldExport>> {
         let mut exports = vec![];
-        DyldExport::parse_recursive(bytes, bytes, String::new(), &mut exports);
-        Ok((bytes, exports))
+        DyldExport::parse_recursive(bytes, bytes, String::new(), &mut exports)?;
+        Ok(exports)
     }
 
-    fn parse_recursive(all: &[u8], p: &[u8], str: String, exports: &mut Vec<DyldExport>) {
-        let (mut p, size) = read_uleb(p).unwrap();
+    fn parse_recursive(all: &[u8], p: &[u8], str: String, exports: &mut Vec<DyldExport>) -> MachOResult<()> {
+        let (mut p, size) = read_uleb(p)?;
         if size != 0 {
-            let (mut p, flags) = DyldExportSymbolFlags::parse(p).unwrap();
+            let (mut p, flags) = DyldExportSymbolFlags::parse(p)?;
             let mut import_name = None;
             let mut ordinal = None;
             let mut address = 0;
             if (flags & DyldExportSymbolFlags::REEXPORT).bits() != 0 {
-                let (next, ord) = read_uleb(p).unwrap();
+                let (next, ord) = read_uleb(p)?;
                 p = next;
                 ordinal = Some(ord as u32);
-                let (_, str) = string_upto_null_terminator(p).unwrap();
+                let (_, str) = string_upto_null_terminator(p)?;
                 import_name = Some(str);
             } else {
-                let (next, addr) = read_uleb(p).unwrap();
+                let (next, addr) = read_uleb(p)?;
                 p = next;
                 address = addr;
                 if (flags & DyldExportSymbolFlags::STUB_AND_RESOLVER).bits() != 0 {
-                    let (_, ord) = read_uleb(p).unwrap();
+                    let (_, ord) = read_uleb(p)?;
                     ordinal = Some(ord as u32);
                 }
             }
@@ -87,9 +87,11 @@ impl DyldExport {
                 &all[child_off as usize..],
                 format!("{}{}", str, cat_str),
                 exports,
-            );
+            )?;
             p = next;
         }
+
+        Ok(())
     }
 }
 
@@ -126,7 +128,7 @@ impl<T: Read + Seek> LoadCommandResolver<T, DyldExportsTrieResolved> for DyldExp
         let mut blob = vec![0; self.cmd.datasize as usize];
         buf.seek(SeekFrom::Start(self.cmd.dataoff as u64)).map_err(|e| MachOErr::IOError(e))?;
         buf.read_exact(&mut blob).map_err(|e| MachOErr::IOError(e))?;
-        let (_, exports) = DyldExport::parse(&blob).unwrap();
+        let exports = DyldExport::parse(&blob)?;
         Ok(
             DyldExportsTrieResolved {
                 exports
