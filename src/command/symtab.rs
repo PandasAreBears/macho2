@@ -9,7 +9,7 @@ use nom::{
 };
 use num_derive::FromPrimitive;
 
-use crate::{helpers::string_upto_null_terminator, macho::MachOResult};
+use crate::{header::MHMagic, helpers::string_upto_null_terminator, macho::MachOResult};
 
 use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser, LoadCommandResolver}; 
 
@@ -126,7 +126,7 @@ impl NlistType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Nlist64 {
+pub struct Nlist {
     pub n_strx: String,
     pub n_type: NlistType,
     pub n_sect: u8,
@@ -134,10 +134,11 @@ pub struct Nlist64 {
     pub n_value: u64,
 }
 
-impl Nlist64 {
+impl Nlist {
     pub const SIZE: u8 = 16;
+    pub const SIZE_32: u8 = 12;
 
-    pub fn parse<'a>(bytes: &'a [u8], strings: &[u8]) -> IResult<&'a [u8], Self> {
+    pub fn parse<'a>(bytes: &'a [u8], strings: &[u8], is_64_bit: bool) -> IResult<&'a [u8], Self> {
         let (cursor, n_strx) = le_u32(bytes)?;
         let n_strx = string_upto_null_terminator(&strings[n_strx as usize..])
             .unwrap()
@@ -145,11 +146,17 @@ impl Nlist64 {
         let (cursor, n_type) = NlistType::parse(cursor)?;
         let (cursor, n_sect) = le_u8(cursor)?;
         let (cursor, n_desc) = NlistDesc::parse(cursor)?;
-        let (cursor, n_value) = le_u64(cursor)?;
+        let (cursor, n_value) = if is_64_bit {
+            le_u64(cursor)?
+        }
+        else {
+            let (c, v) = le_u32(cursor)?;
+            (c, v as u64)
+        };
 
         Ok((
             cursor,
-            Nlist64 {
+            Nlist {
                 n_strx,
                 n_type,
                 n_sect,
@@ -202,28 +209,35 @@ impl LoadCommandParser for SymtabCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SymtabCommandResolved {
-    pub symbols: Vec<Nlist64>,
+    pub symbols: Vec<Nlist>,
 }
 
 impl<T: Read + Seek> LoadCommandResolver<T, SymtabCommandResolved> for SymtabCommand {
     fn resolve(&self, buf: &mut T) -> MachOResult<SymtabCommandResolved> {
+        let mut magic = vec![0u8; 4];
+        buf.seek(std::io::SeekFrom::Start(0)).map_err(|e| crate::macho::MachOErr::IOError(e))?;
+        buf.read_exact(&mut magic).map_err(|e| crate::macho::MachOErr::IOError(e))?;
+        let magic_value = u32::from_le_bytes([magic[0], magic[1], magic[2], magic[3]]);
+        let is_64_bit = magic_value == MHMagic::MhMagic64 as u32;
+        let nlist_size: usize = if is_64_bit { Nlist::SIZE as usize } else { Nlist::SIZE_32 as usize };
+
         let mut string_pool = vec![0u8; self.strsize as usize];
         buf.seek(std::io::SeekFrom::Start(self.stroff as u64)).map_err(|e| crate::macho::MachOErr::IOError(e))?;
         buf.read_exact(&mut string_pool).map_err(|e| crate::macho::MachOErr::IOError(e))?;
 
-        let mut sym_offs = vec![0u8; self.nsyms as usize * Nlist64::SIZE as usize];
+        let mut sym_offs = vec![0u8; self.nsyms as usize * nlist_size];
         buf.seek(std::io::SeekFrom::Start(self.symoff as u64)).map_err(|e| crate::macho::MachOErr::IOError(e))?;
         buf.read_exact(&mut sym_offs).map_err(|e| crate::macho::MachOErr::IOError(e))?;
 
         let symbols = (0..self.nsyms)
-            .map(|i| {
-                let (_, symbol) = Nlist64::parse(
-                    &sym_offs[i as usize * Nlist64::SIZE as usize..],
+            .filter_map(|i| {
+                Nlist::parse(
+                    &sym_offs[i as usize * nlist_size..],
                     &string_pool,
-                )
-                .unwrap();
-                symbol
+                    is_64_bit
+                ).ok()
             })
+            .map(|(_, s)| s)
             .collect();
 
         Ok(

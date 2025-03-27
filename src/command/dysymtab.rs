@@ -9,7 +9,7 @@ use nom::{
 use crate::macho::MachOResult;
 
 use super::{
-    pad_to_size, symtab::{Nlist64, SymtabCommandResolved}, LCLoadCommand, LoadCommandBase, LoadCommandParser
+    pad_to_size, symtab::{Nlist, SymtabCommandResolved}, LCLoadCommand, LoadCommandBase, LoadCommandParser
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -126,10 +126,10 @@ impl LoadCommandParser for DysymtabCommand {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DysymtabCommandResolved {
-    pub locals: Vec<Nlist64>,
-    pub extdefs: Vec<Nlist64>,
-    pub undefs: Vec<Nlist64>,
-    pub indirect: Vec<Nlist64>,
+    pub locals: Vec<Nlist>,
+    pub extdefs: Vec<Nlist>,
+    pub undefs: Vec<Nlist>,
+    pub indirect: Vec<Nlist>,
 }
 
 impl DysymtabCommand {
