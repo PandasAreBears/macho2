@@ -94,23 +94,6 @@ pub trait LoadCommandResolver<T, R> {
     fn resolve(&self, buf: &mut T) -> MachOResult<R>;
 }
 
-#[macro_export]
-macro_rules! try_nom {
-    ($result:expr) => {
-        match $result {
-            Ok((rest, value)) => (rest, value),
-            Err(e) => {
-                return Err(match e {
-                    nom::Err::Error(e) | nom::Err::Failure(e) => 
-                        MachOErr::NomError(e.code),
-                    nom::Err::Incomplete(_) => 
-                        MachOErr::ParsingError("Incomplete input data".to_string()),
-                })
-            }
-        }
-    };
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct LoadCommandBase {
     pub cmd: LCLoadCommand,

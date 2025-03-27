@@ -1100,10 +1100,10 @@ impl<T: Read + Seek> LoadCommandResolver<T, DyldChainedFixupCommandResolved> for
 
         Ok(
             DyldChainedFixupCommandResolved {
-                header: header,
-                imports: imports,
-                starts: starts,
-                fixups: fixups,
+                header,
+                imports,
+                starts,
+                fixups,
             },
         )
     }

@@ -24,14 +24,14 @@ pub enum MachOErr {
     MagicError,
     InvalidValue(String), 
     ParsingError(String), 
-    NomError,
+    NomError(String),
     GenericError(String), 
     UnknownLoadCommand
 }
 
 impl From<nom::Err<nom::error::Error<&[u8]>>> for MachOErr {
-    fn from(_: nom::Err<nom::error::Error<&[u8]>>) -> Self {
-        MachOErr::NomError
+    fn from(e: nom::Err<nom::error::Error<&[u8]>>) -> Self {
+        MachOErr::NomError(e.to_string())
     }
 }
 
@@ -350,10 +350,10 @@ impl<'a, T: Seek + Read> FatMachO<'a, T> {
 
         let mut partial = FileSubset::new(self.buf, offset, size).map_err(|_| MachOErr::InvalidValue("Unable to create subset".to_string()))?;
 
-        if !MachO::<_>::is_macho_magic(&mut partial)? {
+        if !MachO::is_macho_magic(&mut partial)? {
             return Err(MachOErr::InvalidValue("Fat MachO slice is not a MachO".to_string()));
         }
 
-        MachO::<_>::parse(partial)
+        MachO::parse(partial)
     }
 }

@@ -49,7 +49,7 @@ fn main() -> MachOResult<()> {
         let macho = fat_macho
             .macho(fat_macho.archs[index].cputype())
             .map_err(|e| {
-                panic!("Failed to extract Mach-O: {}", e);
+                panic!("Failed to extract Mach-O: {:?}", e);
             })
             .unwrap();
         print_header(macho.header);
