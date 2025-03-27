@@ -278,6 +278,7 @@ impl CpuSubTypeArm64 {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
 pub enum ThreadStateFlavor {
+    X86ThreadState32 = 1,
     X86ThreadState64 = 4,
     Arm64ThreadState64 = 6,
 }
@@ -299,6 +300,7 @@ impl ThreadStateFlavor {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ThreadState {
+    X86State32(X86ThreadState32),
     X86State64(X86ThreadState64),
     Arm64State64(Arm64ThreadState64),
 }
@@ -314,11 +316,16 @@ impl ThreadState {
                 let (bytes, state) = Arm64ThreadState64::parse(bytes)?;
                 Ok((bytes, ThreadState::Arm64State64(state)))
             }
+            ThreadStateFlavor::X86ThreadState32 => {
+                let (bytes, state) = X86ThreadState32::parse(bytes)?;
+                Ok((bytes, ThreadState::X86State32(state)))
+            }
         }
     }
 
     pub fn serialize(&self) -> Vec<u8> {
         match self {
+            ThreadState::X86State32(state) => state.serialize(),
             ThreadState::X86State64(state) => state.serialize(),
             ThreadState::Arm64State64(state) => state.serialize(),
         }
@@ -346,23 +353,78 @@ impl ThreadStateBase {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
-pub enum ThreadStateX86Flavor {
-    X86ThreadState64 = 4,
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct X86ThreadState32 {
+    pub eax: u32,
+    pub ebx: u32,
+    pub ecx: u32,
+    pub edx: u32,
+    pub edi: u32,
+    pub esi: u32,
+    pub ebp: u32,
+    pub esp: u32,
+    pub ss: u32,
+    pub eflags: u32,
+    pub eip: u32,
+    pub cs: u32,
+    pub ds: u32,
+    pub es: u32,
+    pub fs: u32,
+    pub gs: u32,
 }
 
-impl ThreadStateX86Flavor {
-    pub fn parse(bytes: &[u8]) -> IResult<&[u8], ThreadStateX86Flavor> {
-        let (bytes, flavor) = le_u32(bytes)?;
-        match num::FromPrimitive::from_u32(flavor) {
-            Some(flavor) => Ok((bytes, flavor)),
-            None => Err(Failure(Error::new(bytes, ErrorKind::Tag))),
-        }
+impl X86ThreadState32 {
+    pub const SIZE: u32 = 16;
+
+    pub fn parse(bytes: &[u8]) -> IResult<&[u8], X86ThreadState32> {
+        let (bytes, (eax, ebx, ecx, edx, edi, esi, ebp, esp, ss, eflags, eip, cs, ds, es, fs, gs)) =
+            sequence::tuple((
+                le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
+                le_u32, le_u32, le_u32, le_u32, le_u32, le_u32,
+            ))(bytes)?;
+
+        Ok((
+            bytes,
+            X86ThreadState32 {
+                eax,
+                ebx,
+                ecx,
+                edx,
+                edi,
+                esi,
+                ebp,
+                esp,
+                ss,
+                eflags,
+                eip,
+                cs,
+                ds,
+                es,
+                fs,
+                gs,
+            },
+        ))
     }
 
     pub fn serialize(&self) -> Vec<u8> {
-        let flavor = *self as u32;
-        flavor.to_le_bytes().to_vec()
+        let mut buf = Vec::new();
+        buf.extend(self.eax.to_le_bytes());
+        buf.extend(self.ebx.to_le_bytes());
+        buf.extend(self.ecx.to_le_bytes());
+        buf.extend(self.edx.to_le_bytes());
+        buf.extend(self.edi.to_le_bytes());
+        buf.extend(self.esi.to_le_bytes());
+        buf.extend(self.ebp.to_le_bytes());
+        buf.extend(self.esp.to_le_bytes());
+        buf.extend(self.ss.to_le_bytes());
+        buf.extend(self.eflags.to_le_bytes());
+        buf.extend(self.eip.to_le_bytes());
+        buf.extend(self.cs.to_le_bytes());
+        buf.extend(self.ds.to_le_bytes());
+        buf.extend(self.es.to_le_bytes());
+        buf.extend(self.fs.to_le_bytes());
+        buf.extend(self.gs.to_le_bytes());
+        buf
     }
 }
 

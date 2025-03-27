@@ -1,5 +1,5 @@
 use crate::{machine::{
-    Arm64ThreadState64, ThreadState, ThreadStateArm64Flavor, ThreadStateBase, ThreadStateX86Flavor, X86ThreadState64
+    Arm64ThreadState64, ThreadState, ThreadStateBase, ThreadStateFlavor, X86ThreadState32, X86ThreadState64
 }, macho::MachOResult};
 
 use super::{pad_to_size, LCLoadCommand, LoadCommandBase, LoadCommandParser};
@@ -42,13 +42,17 @@ impl LoadCommandParser for ThreadCommand {
         for thread in &self.threads {
             match thread {
                 ThreadState::X86State64(_) => {
-                    buf.extend((ThreadStateX86Flavor::X86ThreadState64 as u32).to_le_bytes());
+                    buf.extend((ThreadStateFlavor::X86ThreadState64 as u32).to_le_bytes());
                     buf.extend(X86ThreadState64::SIZE.to_le_bytes());
                 }
                 ThreadState::Arm64State64(_) => {
-                    buf.extend((ThreadStateArm64Flavor::Arm64ThreadState64 as u32).to_le_bytes());
+                    buf.extend((ThreadStateFlavor::Arm64ThreadState64 as u32).to_le_bytes());
                     buf.extend(Arm64ThreadState64::SIZE.to_le_bytes());
-                }
+                },
+                ThreadState::X86State32(_) => {
+                    buf.extend((ThreadStateFlavor::X86ThreadState32 as u32).to_le_bytes());
+                    buf.extend(X86ThreadState32::SIZE.to_le_bytes());
+                },
             }
             buf.extend(thread.serialize());
         }

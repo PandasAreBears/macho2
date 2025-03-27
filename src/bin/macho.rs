@@ -153,6 +153,10 @@ fn print_load_commands<T: Seek + Read>(mut macho: MachO<T>) {
                         println!(
                             "LC_UNIXTHREAD  pc=0x{:016x} sp=0x{:016x}", arm64_thread_state64.pc, arm64_thread_state64.sp);
                     },
+                    ThreadState::X86State32(x86_thread_state32) => {
+                        println!(
+                            "LC_UNIXTHREAD  eip=0x{:08x} esp=0x{:08x}", x86_thread_state32.eip, x86_thread_state32.esp);
+                    },
                 }
             }
             else {
