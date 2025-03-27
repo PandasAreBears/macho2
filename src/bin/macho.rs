@@ -1,5 +1,8 @@
 use macho2::{
-    command::{segment::Protection, LoadCommand}, header::MachHeader, machine::ThreadState, macho::{FatMachO, MachO, MachOErr, MachOResult}
+    command::{segment::Protection, LoadCommand},
+    header::MachHeader,
+    machine::ThreadState,
+    macho::{FatMachO, MachO, MachOErr, MachOResult},
 };
 use std::{
     env,
@@ -157,11 +160,15 @@ fn print_load_commands<T: Seek + Read>(mut macho: MachO<T>) {
             }
         }
         LoadCommand::Dysymtab(dysymtab_command) => println!(
-            "LC_DYSYMTAB  nlocals={} nextdefs={} nundefs={} nindirects={}",
-            dysymtab_command.nlocalsym,
-            dysymtab.as_ref().unwrap().extdefs.len(),
-            dysymtab_command.nundefsym,
-            dysymtab.as_ref().unwrap().indirect.len(),
+            "LC_DYSYMTAB  {}",
+            match dysymtab.as_ref() {
+                Some(dysymtab) => format!("nlocals={} nextdefs={} nundefs={} nindirects={}", 
+                    dysymtab_command.nlocalsym, 
+                    dysymtab.extdefs.len(), 
+                    dysymtab_command.nundefsym, 
+                    dysymtab.indirect.len()),
+                None => format!("nlocals={} nundefs={}", dysymtab_command.nlocalsym, dysymtab_command.nundefsym),
+            },
         ),
         LoadCommand::LoadDylib(dylib_command) => {
             println!(
@@ -209,8 +216,11 @@ fn print_load_commands<T: Seek + Read>(mut macho: MachO<T>) {
         LoadCommand::Rpath(rpath_command) => println!("LC_RPATH  {}", rpath_command.path),
         LoadCommand::CodeSignature(_) => {
             println!(
-                "LC_CODE_SIGNATURE  nblobs={}",
-                codesignature.as_ref().unwrap().blobs.len()
+                "LC_CODE_SIGNATURE  {}",
+                match codesignature.as_ref() {
+                    Some(codesignature) => format!("{}", codesignature.blobs.len()),
+                    None => "(malformed)".to_string(),
+                }
             )
         }
         LoadCommand::SegmentSplitInfo(_) => println!("LC_SEGMENT_SPLIT_INFO  "),
@@ -231,26 +241,34 @@ fn print_load_commands<T: Seek + Read>(mut macho: MachO<T>) {
             encryption_info_command.cryptoff, encryption_info_command.cryptsize
         ),
         LoadCommand::DyldInfo(_) => println!(
-            "LC_DYLD_INFO  nrebase={} nbind={} nweakbind={} nlazybind={} nexport={}",
-            dyldinfo.as_ref().unwrap()
-                .rebase_instructions
-                .len(),
-            dyldinfo.as_ref().unwrap().bind_instructions.len(),
-            dyldinfo.as_ref().unwrap().weak_instructions.len(),
-            dyldinfo.as_ref().unwrap() 
-                .lazy_instructions
-                .len(),
-            dyldinfo.as_ref().unwrap().exports.len()
+            "LC_DYLD_INFO  {}",
+            match dyldinfo.as_ref() {
+                Some(dyldinfo) => {
+                    format!("nrebase={} nbind={} nweakbind={} nlazybind={} nexport={}",
+                    dyldinfo.rebase_instructions.len(),
+                    dyldinfo.bind_instructions.len(),
+                    dyldinfo.weak_instructions.len(),
+                    dyldinfo.lazy_instructions.len(),
+                    dyldinfo.exports.len())
+                }
+                None => "(malformed)".to_string(),
+            },
         ),
         LoadCommand::DyldInfoOnly(_) => println!(
-            "LC_DYLD_INFO_ONLY  nrebase={} nbind={} nweakbind={} nlazybind={} nexport={}",
-            dyldinfoonly.as_ref().unwrap()
-                .rebase_instructions
-                .len(),
-            dyldinfoonly.as_ref().unwrap().bind_instructions.len(),
-            dyldinfoonly.as_ref().unwrap().weak_instructions.len(),
-            dyldinfoonly.as_ref().unwrap().lazy_instructions.len(),
-            dyldinfoonly.as_ref().unwrap().exports.len()
+            "LC_DYLD_INFO_ONLY  {}",
+            match dyldinfoonly.as_ref() {
+                Some(dyldinfoonly) => {
+                    format!(
+                        "nrebase={} nbind={} nweakbind={} nlazybind={} nexport={}",
+                        dyldinfoonly.rebase_instructions.len(),
+                        dyldinfoonly.bind_instructions.len(),
+                        dyldinfoonly.weak_instructions.len(),
+                        dyldinfoonly.lazy_instructions.len(),
+                        dyldinfoonly.exports.len()
+                    )
+                }
+                None => "(malformed)".to_string(),
+            }
         ),
         LoadCommand::LoadUpwardDylib(dylib_command) => {
             println!(
@@ -266,8 +284,14 @@ fn print_load_commands<T: Seek + Read>(mut macho: MachO<T>) {
         }
         LoadCommand::FunctionStarts(_) => {
             println!(
-                "LC_FUNCTION_STARTS  nfuncs={}",
-                functionstarts.as_ref().unwrap().funcs.len()
+                "LC_FUNCTION_STARTS  {}",
+                match functionstarts.as_ref() {
+                    Some(functionstarts) => format!(
+                        "{}",
+                        functionstarts.funcs.len()
+                    ),
+                    None => "(malformed)".to_string(),
+                }
             )
         }
         LoadCommand::DyldEnvironment(dylinker_command) => {
@@ -312,16 +336,24 @@ fn print_load_commands<T: Seek + Read>(mut macho: MachO<T>) {
         }
         LoadCommand::DyldExportsTrie(_) => {
             println!(
-                "LC_DYLD_EXPORTS_TRIE  nexports={}",
-                exportstrie.as_ref().unwrap().exports.len()
+                "LC_DYLD_EXPORTS_TRIE  {}",
+                match exportstrie.as_ref() {
+                    Some(exportstrie) => {
+                        format!(
+                            "nexports={}",
+                            exportstrie.exports.len()
+                        )
+                    }
+                    None => "(malformed)".to_string(),
+                }
             )
         }
         LoadCommand::DyldChainedFixups(_) => println!(
-            "LC_DYLD_CHAINED_FIXUPS  nimports={} nstarts={}",
-            fixups.as_ref().unwrap().imports.len(),
-            fixups.as_ref().unwrap().starts
-                .seg_starts
-                .len()
+            "LC_DYLD_CHAINED_FIXUPS  {}",
+            match fixups.as_ref() {
+                Some(fixups) => format!("nimports={} nstarts={}", fixups.imports.len(), fixups.starts.seg_starts.len()),
+                None => "(malformed)".to_string(),
+            }
         ),
         LoadCommand::FilesetEntry(fileset_entry_command) => println!(
             "LC_FILESET_ENTRY  {} addr=0x{:08x} off=0x{:08x}",
@@ -333,7 +365,6 @@ fn print_load_commands<T: Seek + Read>(mut macho: MachO<T>) {
     }
     })
 }
-
 
 fn protection_to_string(prot: Protection) -> String {
     let mut prot_str = String::new();

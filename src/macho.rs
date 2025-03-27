@@ -231,7 +231,7 @@ impl<T: Seek + Read> MachO<T> {
         self.load_commands
             .iter()
             .find_map(|lc| match lc {
-                LoadCommand::DyldInfo(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
+                LoadCommand::DyldInfo(cmd) => cmd.resolve(&mut self.buf).ok(),
                 _ => None,
             })
     }
@@ -240,7 +240,7 @@ impl<T: Seek + Read> MachO<T> {
         self.load_commands
             .iter()
             .find_map(|lc| match lc {
-                LoadCommand::DyldInfoOnly(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
+                LoadCommand::DyldInfoOnly(cmd) => cmd.resolve(&mut self.buf).ok(),
                 _ => None,
             })
     }
@@ -249,7 +249,7 @@ impl<T: Seek + Read> MachO<T> {
         self.load_commands
             .iter()
             .find_map(|lc| match lc {
-                LoadCommand::DyldExportsTrie(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
+                LoadCommand::DyldExportsTrie(cmd) => cmd.resolve(&mut self.buf).ok(),
                 _ => None,
             })
     }
@@ -258,7 +258,7 @@ impl<T: Seek + Read> MachO<T> {
         self.load_commands
             .iter()
             .find_map(|lc| match lc {
-                LoadCommand::CodeSignature(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
+                LoadCommand::CodeSignature(cmd) => cmd.resolve(&mut self.buf).ok(),
                 _ => None,
             })
     }
@@ -268,7 +268,7 @@ impl<T: Seek + Read> MachO<T> {
         self.load_commands
             .iter()
             .find_map(|lc| match lc {
-                LoadCommand::Dysymtab(cmd) => Some(cmd.resolve(&mut self.buf, symtab.clone()).unwrap()),
+                LoadCommand::Dysymtab(cmd) => cmd.resolve(&mut self.buf, symtab.clone()).ok(),
                 _ => None,
             })
     }
@@ -277,7 +277,7 @@ impl<T: Seek + Read> MachO<T> {
         self.load_commands
             .iter()
             .find_map(|lc| match lc {
-                LoadCommand::Symtab(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
+                LoadCommand::Symtab(cmd) => cmd.resolve(&mut self.buf).ok(),
                 _ => None,
             })
     }
@@ -286,7 +286,7 @@ impl<T: Seek + Read> MachO<T> {
         self.load_commands
             .iter()
             .find_map(|lc| match lc {
-                LoadCommand::FunctionStarts(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
+                LoadCommand::FunctionStarts(cmd) => cmd.resolve(&mut self.buf).ok(),
                 _ => None,
             })
     }
@@ -295,7 +295,7 @@ impl<T: Seek + Read> MachO<T> {
         self.load_commands
             .iter()
             .find_map(|lc| match lc {
-                LoadCommand::DyldChainedFixups(cmd) => Some(cmd.resolve(&mut self.buf).unwrap()),
+                LoadCommand::DyldChainedFixups(cmd) => cmd.resolve(&mut self.buf).ok(),
                 _ => None,
             })
     }
