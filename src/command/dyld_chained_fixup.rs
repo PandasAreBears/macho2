@@ -453,8 +453,12 @@ pub struct DyldChainedPtr32Bind {
 impl DyldChainedPtr32Bind {
     pub fn parse(raw: u32, ordinals: &Vec<String>) -> Self {
         let bf = DyldChainedPtr32BindBF(raw);
+        let ordinal = match ordinals.get(bf.ordinal() as usize) {
+            Some(ref s) => s,
+            None => "",
+        };
         DyldChainedPtr32Bind {
-            ordinal: (*ordinals.get(bf.ordinal() as usize).unwrap().clone()).to_string(),
+            ordinal: ordinal.to_string(),
             addend: bf.addend() as u8,
             next: bf.next() as u8,
             bind: bf.bind() as bool,
