@@ -222,7 +222,7 @@ fn print_load_commands<T: Seek + Read>(mut macho: MachO<T>) {
             println!(
                 "LC_CODE_SIGNATURE  {}",
                 match codesignature.as_ref() {
-                    Some(codesignature) => format!("{}", codesignature.blobs.len()),
+                    Some(codesignature) => format!("nblobs={}", codesignature.blobs.len()),
                     None => "(malformed)".to_string(),
                 }
             )
@@ -291,7 +291,7 @@ fn print_load_commands<T: Seek + Read>(mut macho: MachO<T>) {
                 "LC_FUNCTION_STARTS  {}",
                 match functionstarts.as_ref() {
                     Some(functionstarts) => format!(
-                        "{}",
+                        "nfuncs={}",
                         functionstarts.funcs.len()
                     ),
                     None => "(malformed)".to_string(),
